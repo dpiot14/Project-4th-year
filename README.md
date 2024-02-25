@@ -17,6 +17,8 @@ Séries temporelles sous R  https://simonbussy.com/teaching/time-series/time_ser
 
 http://mribatet.perso.math.cnrs.fr/CentraleNantes/STA2/AirPassengersCaseStudy.html
 
+https://www.sciencedirect.com/science/article/pii/S0360544216311811?via%3Dihub
+
 
 ## Equivalent des noms de fichier - noms de régions
 
