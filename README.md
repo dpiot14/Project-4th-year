@@ -4,9 +4,10 @@ Petit git pour notre projet.
 J'ai pas mis les données sur le git car le prof a dit que c'était pas ouf pour les données, je pense donc qu'on peut les laisser sur le drive et télécharger que celles dont on a besoin quand on veut utiliser un programme.
 
 ## ToDo list 
-- Etude des séries temporelles (peut être sur une série, puis généraliser à tous les jeux de données ?)
-- Explication des données utilisées
-- Modèeles de prédictions (ARMA, ARIMA, ARIMAX, SARIMA)
+- Téléchargement des données de Montpellier, Perpignan et Agen - Manon
+- Modèeles de prédictions (ARMA, ARIMA, ARIMAX, SARIMA) - Manon & PN
+- Etude sinusoïdale - PN
+- Etude des corrélations entre différentes villes géographiquement proche - Damien
 
 ## Liens utiles
 Données énergétiques : https://www.renewables.ninja/
