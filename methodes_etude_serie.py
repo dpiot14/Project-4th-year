@@ -1,0 +1,59 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Mar 18 19:49:59 2024
+
+@author: piotd
+"""
+import pandas as pd
+import numpy as np
+
+#Fonction pour calculer la tendance et la saisonnalité d'une série temporelle
+#sous format dataframe avec les jours comme index (la variable data)
+#Renvoie la tendance(float) puis la saisonnalité(np.array)
+#Paramètre methode_tend : choix de la méthode pour calculer la tendance
+#'mean' : valeur moyenne sur la série (tendance si on suppose la série stationnaire) (valeur par défaut)
+#Paramètre methode_saison : choix de la méthode pour calculer la saisonnalite
+#'mobile28_d' : moyenne mobile sur 28 jours de la valeur moyenne par jour (valeur par défaut)
+#Les méthodes 'mobile14_d' et 'mobile7_d' existent aussi
+#'mean' : valeur moyenne sur chaque jour de l'année, sans moyenne mobile
+def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saison='mobile28_d'):
+    data_copy=data.copy()
+    
+    ## -- Calcul de la tendance --
+    if methode_tend=='mean':
+        tendance=data_copy['electricity'].mean()
+    else:
+        print("Erreur : Methode pour la tendance inconnue, essayez avec une autre valeur pour 'methode_tend'")
+    
+    ## -- Calcul de la saisonnalité
+    data_copy['electricity']=data_copy['electricity']-tendance
+    data_copy['day']=data_copy.index.day
+    data_copy['month']=data_copy.index.month
+    data_year_wind_tendance = data_copy.groupby(['month', 'day']).agg({'electricity': 'mean', 'wind_speed': 'mean'})
+    
+    if methode_saison=='mobile28_d':
+        saison=pd.concat([data_year_wind_tendance['electricity'][338:],data_year_wind_tendance['electricity'],data_year_wind_tendance['electricity'][:28]]).rolling(28, center=True).mean().to_numpy()[28:394]
+    elif methode_saison=='mobile14_d':
+        saison=pd.concat([data_year_wind_tendance['electricity'][352:],data_year_wind_tendance['electricity'],data_year_wind_tendance['electricity'][:14]]).rolling(14, center=True).mean().to_numpy()[14:380]
+    elif methode_saison=='mobile7_d':
+        saison=pd.concat([data_year_wind_tendance['electricity'][359:],data_year_wind_tendance['electricity'],data_year_wind_tendance['electricity'][:7]]).rolling(7, center=True).mean().to_numpy()[7:373]
+    elif methode_saison=='mean':
+        saison=data_year_wind_tendance
+    else:
+        print("Erreur : Methode pour la saisonnalité inconnue, essayez avec une autre valeur pour 'methode_saison'")
+
+    return tendance,saison
+    
+    
+
+        
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    #return tendance + saisonnalite
