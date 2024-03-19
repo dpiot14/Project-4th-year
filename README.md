@@ -4,10 +4,7 @@ Petit git pour notre projet.
 J'ai pas mis les données sur le git car le prof a dit que c'était pas ouf pour les données, je pense donc qu'on peut les laisser sur le drive et télécharger que celles dont on a besoin quand on veut utiliser un programme.
 
 ## ToDo list 
-- Téléchargement des données de Montpellier, Perpignan et Agen - Manon
-- Modèeles de prédictions (ARMA, ARIMA, ARIMAX, SARIMA) - Manon & PN
-- Etude sinusoïdale - PN
-- Etude des corrélations entre différentes villes géographiquement proche - Damien
+- Remettre en forme les notebooks pour qu'on s'y retrouve
 
 ## Liens utiles
 Données énergétiques : https://www.renewables.ninja/
