@@ -42,12 +42,13 @@ def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saiso
     data_copy['month']=data_copy.index.month
     data_year_wind_tendance = data_copy.groupby(['month', 'day']).agg({'electricity': 'mean', 'wind_speed': 'mean'})
     
-    if methode_saison=='mobile28_d':
-        saison=pd.concat([data_year_wind_tendance['electricity'][338:],data_year_wind_tendance['electricity'],data_year_wind_tendance['electricity'][:28]]).rolling(28, center=True).mean().to_numpy()[28:394]
-    elif methode_saison=='mobile14_d':
-        saison=pd.concat([data_year_wind_tendance['electricity'][352:],data_year_wind_tendance['electricity'],data_year_wind_tendance['electricity'][:14]]).rolling(14, center=True).mean().to_numpy()[14:380]
-    elif methode_saison=='mobile7_d':
-        saison=pd.concat([data_year_wind_tendance['electricity'][359:],data_year_wind_tendance['electricity'],data_year_wind_tendance['electricity'][:7]]).rolling(7, center=True).mean().to_numpy()[7:373]
+    if methode_saison[:6]=='mobile': #Si on souhaite utiliser une moyenne mobile
+        int_mobile,mode_mobile=string_to_number_and_string(methode_tend[6:])
+        if mode_mobile=='_d':
+            saison=pd.concat([data_year_wind_tendance['electricity'][(366-int_mobile):],data_year_wind_tendance['electricity'],data_year_wind_tendance['electricity'][:(int_mobile)]]).rolling(int_mobile, center=True).mean().to_numpy()[(int_mobile):(int_mobile+366)]
+        else:
+            print("Erreur : mauvais argument pour methode_saison : la méthode mobile ne comprends pas "+mode_mobile+"\nVoir la documentation") 
+        
     elif methode_saison=='mean':
         saison=data_year_wind_tendance
     else:
