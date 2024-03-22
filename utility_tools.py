@@ -53,3 +53,30 @@ def regroupement_data(link_data,annee_debut,annee_fin,data_type="wind"):
     
     return data_hour,data_day
 
+
+
+#Fonction pour découper un string débutant par un nombre entier naturel en 2 : 
+#le nombre sous forme de int puis le reste du string. 
+#Exemples : string_to_number_and_string("124fjdk") renvoie (124,"fjdk")
+#string_to_number_and_string("4MA_1") renvoie (4,"MA_1")
+#string_to_number_and_string("GMM13") renvoie (-1,"GMM13") (-1 est la valeur d'erreur)
+#Cette fonction est utilisée pour 'Etude_Tendance_Saisonnalite_annuelle' de 
+#'methode_etude_serie.py'
+def string_to_number_and_string(text):
+    number = ''
+    rest = ''
+    found_number = False
+    
+    for char in text:
+        if char.isdigit() and not found_number:
+            number += char
+        else:
+            found_number = True
+            rest += char
+    
+    try:
+        nbr = int(number)
+    except ValueError:
+        nbr = -1
+    
+    return nbr, rest
