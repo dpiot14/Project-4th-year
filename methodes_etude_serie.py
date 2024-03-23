@@ -42,8 +42,15 @@ def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saiso
     data_copy['month']=data_copy.index.month
     data_year_wind_tendance = data_copy.groupby(['month', 'day']).agg({'electricity': 'mean', 'wind_speed': 'mean'})
     
+    # Création des index avec jour et mois
+    dates = pd.date_range(start='2024-01-01', periods=366)
+    indexes = [f"{date.month}-{date.day}" for date in dates]
+    
+    pd.DataFrame(data_year_wind_tendance, index=indexes, columns=['electricity'])
+
+    
     if methode_saison[:6]=='mobile': #Si on souhaite utiliser une moyenne mobile
-        int_mobile,mode_mobile=string_to_number_and_string(methode_tend[6:])
+        int_mobile,mode_mobile=string_to_number_and_string(methode_saison[6:])
         if mode_mobile=='_d':
             saison=pd.concat([data_year_wind_tendance['electricity'][(366-int_mobile):],data_year_wind_tendance['electricity'],data_year_wind_tendance['electricity'][:(int_mobile)]]).rolling(int_mobile, center=True).mean().to_numpy()[(int_mobile):(int_mobile+366)]
         else:
@@ -56,3 +63,45 @@ def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saiso
 
     return tendance,saison
 
+
+#Fonction pour retirer la tendance et la saisonnalité à une série temporelle
+#Actuellement, la tendance doit être une valeur constante, au format int/float
+def Retrait_Tendance_Saisonnalite(data, tendance, saisonnalite):
+    
+    ## -- Création d'une copie de data
+    data_copy=data.copy()
+    
+    ## -- Ajout de la tendance
+    if type(tendance != int) and type(tendance != float) :
+        print("Erreur : la fonction Ajout_Tendance_Saisonnalite ne fonction qu'avec une tendance constante (int ou float) actuellement")
+    else:
+        data_copy['electricity']-=tendance
+        
+    ## -- Ajout de la saisonnalité
+    
+    for index in data.index:
+        data_copy.loc[index,'electricity']-=saisonnalite[data_copy.index.day,data_copy.index.month]
+        
+    return data_copy
+
+
+
+#Fonction pour ajouter la tendance et la saisonnalité à une série temporelle
+#Actuellement, la tendance doit être une valeur constante, au format int/float
+def Ajout_Tendance_Saisonnalite(data, tendance, saisonnalite):
+    
+    ## -- Création d'une copie de data
+    data_copy=data.copy()
+    
+    ## -- Ajout de la tendance
+    if type(tendance != int) and type(tendance != float) :
+        print("Erreur : la fonction Ajout_Tendance_Saisonnalite ne fonction qu'avec une tendance constante (int ou float) actuellement")
+    else:
+        data_copy['electricity']+=tendance
+        
+    ## -- Ajout de la saisonnalité
+    
+    for index in data.index:
+        data_copy.loc[index,'electricity']+=saisonnalite[data_copy.index.day,data_copy.index.month]
+        
+    return data_copy
