@@ -20,6 +20,9 @@ from utility_tools import string_to_number_and_string
 #'mobile28_d' : moyenne mobile sur 28 jours de la valeur moyenne par jour (valeur par défaut)
 #Les méthodes 'mobile14_d' et 'mobile7_d' existent aussi
 #'mean' : valeur moyenne sur chaque jour de l'année, sans moyenne mobile
+#'sinus1_t10' : Calcul du sinus d'interpolation de la saisonnalité sur la valeur moyenne
+#possibilité de remplacer le 1 par une autre valeur pour utiliser la moyenne mobile correspondante
+#10 correspond au seuil utilisé : 10->seuil de 1/10
 def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saison='mobile28_d'):
     data_copy=data.copy()
     
@@ -59,7 +62,37 @@ def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saiso
         
     elif methode_saison=='mean':
         saison=data_year_wind_tendance
+        
+    elif methode_saison[:5]=='sinus': #Si on souhaite utiliser une méthode sinus
+        #utilisation d'une moyenne mobile ou non pour le calcul du sinus
+        int_mobile,mode_mobile=string_to_number_and_string(methode_saison[5:]) 
+        if mode_mobile[:2]=='_t': #Précision du seuil
+            int_threshold,mode_threshold=string_to_number_and_string(mode_mobile[2:])
+            
+            # Perform Fourier transform
+            if int_mobile == 1:
+                fft = np.fft.fft(data_year_wind_tendance['electricity'])
+            else:
+                np_saison=pd.concat([data_year_wind_tendance['electricity'][(366-int_mobile):],data_year_wind_tendance['electricity'],data_year_wind_tendance['electricity'][:(int_mobile)]]).rolling(int_mobile, center=True).mean().to_numpy()[(int_mobile):(int_mobile+366)]
+                fft = np.fft.fft(np_saison)
+        
+
+            # Get the amplitudes and phases
+            amplitudes = np.abs(fft)
+            phases = np.angle(fft)
+
+            # Set a threshold for small amplitudes
+            threshold = np.max(amplitudes)/int_threshold
+
+            # Set small amplitudes to zero
+            fft[np.where(amplitudes < threshold)] = 0
+
+            # Reconstruct the signal using the inverse Fourier transform
+            saison = np.fft.ifft(fft).real
+        else:
+            print("Erreur : mauvais argument pour methode_saison : la méthode sinus ne comprends pas "+mode_mobile+"\nVoir la documentation")
     else:
+        
         print("Erreur : Methode pour la saisonnalité inconnue, essayez avec une autre valeur pour 'methode_saison'")
 
     return tendance,saison
