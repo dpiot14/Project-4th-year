@@ -6,8 +6,16 @@ Created on Mon Mar 18 19:49:59 2024
 """
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
 from utility_tools import string_to_number_and_string
+
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import r2_score
 
 #Fonction pour calculer la tendance et la saisonnalité d'une série temporelle
 #sous format dataframe avec les jours comme index (la variable data)
@@ -139,3 +147,66 @@ def Ajout_Tendance_Saisonnalite(data, tendance, saisonnalite):
         data_copy.loc[index,'electricity']+=saisonnalite.loc[str(index.month)+"-"+str(index.day),'electricity']
         
     return data_copy
+
+
+def Arma_predict(data,p,q,graph_predict=False,graph_predict_last_year=False,graph_autocorrelation=False,error=False):
+    arma = ARIMA(data, order=(p,0,q)).fit()
+    pred = arma.predict()
+    
+    if graph_predict:
+        plt.figure(figsize=(12,6))
+        plt.plot(data,label="Réel")
+        plt.plot(pred, color = "r",label="Prédiction")
+        plt.xlabel('Temps')
+        plt.ylabel('Facteur de capacité')
+        plt.title("Comparaison de la série réelle et de la prédiction par modèle ARMA")
+        plt.legend()
+        plt.show()
+        
+    if graph_predict_last_year:
+        # Sélection des 365 derniers jours pour chaque série
+        serie_derniere_annee = data[-365:]
+        pred_derniere_annee = pred[-365:]
+
+        # Création du graphique
+        plt.figure(figsize=(12,6))
+        
+        # Affichage de la série réelle pour les 365 derniers jours
+        plt.plot(serie_derniere_annee, label="Réel")
+        
+        # Affichage de la prédiction pour les 365 derniers jours
+        plt.plot(pred_derniere_annee, color = "r", label="Prédiction")
+    
+        # Ajout des légendes et titres
+        plt.xlabel('Temps')
+        plt.ylabel('Facteur de capacité')
+        plt.title("Comparaison de la série réelle et de la prédiction par modèle ARMA pour les 365 derniers jours")
+        plt.legend()
+        
+        # Affichage du graphique
+        plt.show()
+    
+    if graph_autocorrelation:
+        plot_pacf(data)
+        plot_acf(data)
+        plt.show()
+        
+    if error:
+        # Calcul du MSE
+        mse = mean_squared_error(serie_derniere_annee, pred_derniere_annee)
+        
+        # Calcul du MAE
+        mae = mean_absolute_error(serie_derniere_annee, pred_derniere_annee)
+        
+        # Calcul du RMSE
+        rmse = np.sqrt(mse)
+        
+        # Calcul du R^2
+        r2 = r2_score(serie_derniere_annee, pred_derniere_annee)
+        
+        print(f"MSE: {mse}")
+        print(f"MAE: {mae}")
+        print(f"RMSE: {rmse}")
+        print(f"R²: {r2}")
+    
+    return pred
