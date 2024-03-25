@@ -229,11 +229,14 @@ def Arma_predict(data,p,q,graph_predict=False,graph_predict_last_year=False,grap
 #Avec day_exog=1, on utilise non pas les données exogènes le jour même mais la veille
 
 #Ajouter la notion de jeu de données train et test
+#Ajouter infos sur les options
+#Ajouter validation croisée
+#Ajouter option normalisation
 
-def Arimax_predict(data, name_predict, p, q, day_exog=0, day_predict=0, int_conf=False, error=False):
+def Arimax_predict(data, name_predict, p, q, day_exog=0, day_predict=0, int_conf=False, int_conf_1y=False ,error=False):
     data_copy=data.copy()
     endog=data_copy[name_predict]
-    exog=data_copy.drop[name_predict]
+    exog=data_copy.drop(columns=[name_predict])
     
     # Ajustement du modèle ARIMAX avec les variables exogènes choisies
     model = sm.tsa.ARIMA(endog=endog, exog=exog, order=(p, 0, q))
@@ -250,13 +253,13 @@ def Arimax_predict(data, name_predict, p, q, day_exog=0, day_predict=0, int_conf
         
         # Tracer les observations réelles
         plt.figure(figsize=(10,5))
-        plt.plot(dates, endog, label='Observations réelles', color='blue')
+        plt.plot(dates, endog, label='Observations réelles', color='red')
         
         # Tracer les prédictions moyennes
-        plt.plot(dates, predicted_means, label='Prédictions', color='lightblue')
+        plt.plot(dates, predicted_means, label='Prédictions', color='blue')
         
         # Tracer les intervalles de confiance
-        plt.fill_between(dates, predicted_intervals.iloc[:, 0], predicted_intervals.iloc[:, 1], color='lightgreen', alpha=0.3, label='Intervalle de confiance à 95%')
+        plt.fill_between(dates, predicted_intervals.iloc[:, 0], predicted_intervals.iloc[:, 1], color='lightblue', alpha=0.3, label='Intervalle de confiance à 95%')
         
         # Personnaliser le graphique
         plt.title('Prédictions ARIMAX et intervalles de confiance')
@@ -267,6 +270,46 @@ def Arimax_predict(data, name_predict, p, q, day_exog=0, day_predict=0, int_conf
         
         # Afficher le graphique
         plt.show()
+        
+    if int_conf_1y:
+        # Dates de l'ensemble de test - pour l'axe des x
+        n_line=endog.shape[0]
+        dates = endog.iloc[n_line-365:].index
+        
+        # Tracer les observations réelles
+        plt.figure(figsize=(10,5))
+        plt.plot(dates, endog.iloc[n_line-365:], label='Observations réelles', color='red')
+            
+        # Tracer les prédictions moyennes
+        plt.plot(dates, predicted_means.iloc[n_line-365:], label='Prédictions', color='blue')
+            
+        # Tracer les intervalles de confiance
+        plt.fill_between(dates, predicted_intervals.iloc[n_line-365:, 0], predicted_intervals.iloc[n_line-365:, 1], color='lightblue', alpha=0.3, label='Intervalle de confiance à 95%')
+            
+        # Personnaliser le graphique
+        plt.title('Prédictions ARIMAX et intervalles de confiance')
+        plt.xlabel('Date')
+        plt.ylabel('Electricity')
+        plt.legend()
+        plt.tight_layout()
+            
+        # Afficher le graphique
+        plt.show()
+        
+    if error:
+        assert len(predicted_means) == len(data_copy), "La longueur des prédictions et des valeurs réelles doit être identique."
+
+
+        # Calculer les métriques
+        mse = mean_squared_error(endog, predicted_means)
+        mae = mean_absolute_error(endog, predicted_means)
+        rmse = np.sqrt(mse)  # RMSE est simplement la racine carrée de MSE
+        r2 = r2_score(endog, predicted_means)
+        
+        print(f"MSE: {mse}")
+        print(f"MAE: {mae}")
+        print(f"RMSE: {rmse}")
+        print(f"R²: {r2}")
     
     
     return predictions
