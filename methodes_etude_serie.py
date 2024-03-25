@@ -16,6 +16,7 @@ from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import r2_score
+import statsmodels.api as sm
 
 #Fonction pour calculer la tendance et la saisonnalité d'une série temporelle
 #sous format dataframe avec les jours comme index (la variable data)
@@ -149,6 +150,12 @@ def Ajout_Tendance_Saisonnalite(data, tendance, saisonnalite):
     return data_copy
 
 
+#Fonction pour réaliser l'étude arma d'une série temporelle data
+#Renvoie par défaut la prédiction réalisée à l'aide du modèle arma
+#Les paramètres p et q sont des paramètres de la fonction arma
+#Les autres paramètres permettent de choisir les graphes que l'on souhaite
+#afficher à l'écran
+
 def Arma_predict(data,p,q,graph_predict=False,graph_predict_last_year=False,graph_autocorrelation=False,error=False):
     arma = ARIMA(data, order=(p,0,q)).fit()
     pred = arma.predict()
@@ -210,3 +217,56 @@ def Arma_predict(data,p,q,graph_predict=False,graph_predict_last_year=False,grap
         print(f"R²: {r2}")
     
     return pred
+
+
+#Fonction pour réaliser l'étude arimax d'une série temporelle data
+#Renvoie par défaut la prédiction réalisée à l'aide du modèle arimax
+#data correspond aux données (à predire et exogène)
+#name_predict est le nom de la variable à prédire
+#Les paramètres p et q sont des paramètres de la fonction arimax
+#day_exog est le nombre de jour de décallage pour utiliser les données exogènes
+#par défaut, avce day_exog=0, on regarde les variables exogènes le jour même
+#Avec day_exog=1, on utilise non pas les données exogènes le jour même mais la veille
+
+#Ajouter la notion de jeu de données train et test
+
+def Arimax_predict(data, name_predict, p, q, day_exog=0, day_predict=0, int_conf=False, error=False):
+    data_copy=data.copy()
+    endog=data_copy[name_predict]
+    exog=data_copy.drop[name_predict]
+    
+    # Ajustement du modèle ARIMAX avec les variables exogènes choisies
+    model = sm.tsa.ARIMA(endog=endog, exog=exog, order=(p, 0, q))
+    results = model.fit()
+    
+    # Prédictions avec les variables exogènes
+    predictions = results.get_forecast(steps=len(endog), exog=exog)
+    predicted_means = predictions.predicted_mean
+    predicted_intervals = predictions.conf_int()
+    
+    if int_conf:
+        # Dates de l'ensemble de test - pour l'axe des x
+        dates = endog.index
+        
+        # Tracer les observations réelles
+        plt.figure(figsize=(10,5))
+        plt.plot(dates, endog, label='Observations réelles', color='blue')
+        
+        # Tracer les prédictions moyennes
+        plt.plot(dates, predicted_means, label='Prédictions', color='lightblue')
+        
+        # Tracer les intervalles de confiance
+        plt.fill_between(dates, predicted_intervals.iloc[:, 0], predicted_intervals.iloc[:, 1], color='lightgreen', alpha=0.3, label='Intervalle de confiance à 95%')
+        
+        # Personnaliser le graphique
+        plt.title('Prédictions ARIMAX et intervalles de confiance')
+        plt.xlabel('Date')
+        plt.ylabel('Electricity')
+        plt.legend()
+        plt.tight_layout()
+        
+        # Afficher le graphique
+        plt.show()
+    
+    
+    return predictions
