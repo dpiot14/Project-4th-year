@@ -228,16 +228,26 @@ def Arma_predict(data,p,q,graph_predict=False,graph_predict_last_year=False,grap
 #par défaut, avce day_exog=0, on regarde les variables exogènes le jour même
 #Avec day_exog=1, on utilise non pas les données exogènes le jour même mais la veille
 
+
 #Ajouter la notion de jeu de données train et test
 #Ajouter infos sur les options
 #Ajouter validation croisée
 #Ajouter option normalisation
 #Ajouter l'impact des jours précédents
 
-def Arimax_predict(data, name_predict, p, q, day_exog=0, day_predict=0, int_conf=False, int_conf_1y=False ,error=False):
+def Arimax_predict(data, name_predict, p, q, day_exog=0, int_conf=False, int_conf_1y=False ,error=False):
     data_copy=data.copy()
     endog=data_copy[name_predict]
-    exog=data_copy.drop(columns=[name_predict])
+    if day_exog==0:
+        exog=data_copy.drop(columns=[name_predict])
+    elif day_exog>0:
+        exog_shift = data_copy.drop(columns=[name_predict]).shift(day_exog)  #On décale les données de day_exog jours
+        #On supprime les premiers jours de données car on NaN dans exog_shift à cause du décalage
+        exog=exog_shift.iloc[day_exog:]
+        endog=endog.iloc[day_exog:]
+        exog.columns=exog.columns+"_"+str(day_exog) #On change les noms des colonnes
+    else:
+        print("Erreur : dans Arimax_predict, la valeur de day_exog est négative, elle doit être positive ou nulle")
     
     # Ajustement du modèle ARIMAX avec les variables exogènes choisies
     model = sm.tsa.ARIMA(endog=endog, exog=exog, order=(p, 0, q))
@@ -298,7 +308,7 @@ def Arimax_predict(data, name_predict, p, q, day_exog=0, day_predict=0, int_conf
         plt.show()
         
     if error:
-        assert len(predicted_means) == len(data_copy), "La longueur des prédictions et des valeurs réelles doit être identique."
+        assert len(predicted_means) == len(endog), "La longueur des prédictions et des valeurs réelles doit être identique."
 
 
         # Calculer les métriques
