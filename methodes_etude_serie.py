@@ -232,6 +232,7 @@ def Arma_predict(data,p,q,graph_predict=False,graph_predict_last_year=False,grap
 #Ajouter infos sur les options
 #Ajouter validation croisée
 #Ajouter option normalisation
+#Ajouter l'impact des jours précédents
 
 def Arimax_predict(data, name_predict, p, q, day_exog=0, day_predict=0, int_conf=False, int_conf_1y=False ,error=False):
     data_copy=data.copy()
