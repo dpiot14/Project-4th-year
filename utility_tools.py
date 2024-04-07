@@ -15,6 +15,7 @@ n'y est pas de doublon pour les données
 
     - Pour le vent : data_type = wind
     - Pour les données météo : data_type = weather
+    - Pour le sloaire : data_type = solar
 '''
 
 def regroupement_data(link_data,annee_debut,annee_fin,data_type="wind"):
@@ -53,6 +54,8 @@ def regroupement_data(link_data,annee_debut,annee_fin,data_type="wind"):
     elif data_type=="weather":
         #print(data_hour.head())
         data_day = data_hour.groupby(data_hour['time'].dt.date).agg({'t2m': 'mean', 'prectotland': 'mean', 'precsnoland': 'mean', 'snomas': 'mean', 'rhoa': 'mean', 'swgdn': 'mean', 'swtdn': 'mean', 'cldtot': 'mean'})
+    elif data_type=="solar":
+        data_day = data_hour.groupby(data_hour['time'].dt.date).agg({'electricity': 'mean', 'irradiance_direct': 'mean', 'irradiance_diffuse': 'mean', 'temperature': 'mean', 'rhoa': 'mean', 'swgdn': 'mean', 'swtdn': 'mean', 'cldtot': 'mean'})
     data_day.index = pd.to_datetime(data_day.index)
     
     return data_hour,data_day

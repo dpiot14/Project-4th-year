@@ -30,14 +30,17 @@ Sous format dataframe avec les jours comme index (la variable data)
         Expl : pour la moyenne mobile sur 30 jours, entrer 'mobile30_d'
 
     Paramètre methode_saison : choix de la méthode pour calculer la saisonnalite
-        'mobile28_d' : moyenne mobile sur 28 jours de la valeur moyenne par jour (valeur par défaut)
-        Les méthodes 'mobile14_d' et 'mobile7_d' existent aussi
-    'mean' : valeur moyenne sur chaque jour de l'année, sans moyenne mobile
-    'sinus1_t10' : Calcul du sinus d'interpolation de la saisonnalité sur la valeur moyenne
+        'mobileI_d' : moyenne mobile sur I jours de la valeur moyenne sur chaque jour de l'année
+        Expl : 'mobile28_d' : moyenne mobile sur 28 jours de la valeur moyenne par jour (valeur par défaut)
+        
+        'mean' : valeur moyenne sur chaque jour de l'année, sans moyenne mobile
+        'sinus1_t10' : Calcul du sinus d'interpolation de la saisonnalité sur la valeur moyenne
 
 possibilité de remplacer le 1 par une autre valeur pour utiliser la moyenne mobile correspondante
 10 correspond au seuil utilisé : 10->seuil de 1/10
 '''
+
+# Test : ok
 
 def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saison='mobile28_d'):
     data_copy=data.copy()
@@ -77,7 +80,7 @@ def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saiso
             print("Erreur : mauvais argument pour methode_saison : la méthode mobile ne comprends pas "+mode_mobile+"\nVoir la documentation") 
         
     elif methode_saison=='mean':
-        saison=data_year_wind_tendance
+        saison=data_year_wind_tendance['electricity']
         
     elif methode_saison[:5]=='sinus': # Si on souhaite utiliser une méthode sinus
         # Utilisation d'une moyenne mobile ou non pour le calcul du sinus
@@ -116,19 +119,40 @@ def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saiso
 
 '''
 Fonction pour retirer la tendance et la saisonnalité à une série temporelle
-Actuellement, la tendance doit être une valeur constante, au format int/float
+data : les données, au format ...
+tendance : la tendance, au format...
+saisonnalite : la saisonnalité, au format...
+bords_tendance : si la tendance est calculée à l'aide d'une moyenne mobile, il manque des valeurs sur les bords:
+    - si bords_tendance = 'nearest' : la valeur la plus proche (première ou dernière valeur calculée) remplace les NaN
+    - si bords_tendance = 'delete' : les valeurs aux bords sont simplement supprimés
 Retourne la série nettoyée
 '''
-def Retrait_Tendance_Saisonnalite(data, tendance, saisonnalite):
+def Retrait_Tendance_Saisonnalite(data, tendance, saisonnalite, bords_tendance = 'nearest'):
     
     ## -- Création d'une copie de data
     data_copy=data.copy()
     
     ## -- Retrait de la tendance
-    if type(tendance) != int and type(tendance) != float :
-        print("Erreur : la fonction Retrait_Tendance_Saisonnalite ne fonction qu'avec une tendance constante (int ou float) actuellement")
-    else:
+    if type(tendance) == int or type(tendance) == float :
         data_copy['electricity']-=tendance
+    elif type(tendance) == pd.Series :
+        if bords_tendance == 'nearest':
+            first_valid_index = tendance.first_valid_index()
+            last_valid_index = tendance.last_valid_index()
+            first_valid_value = tendance[first_valid_index]
+            last_valid_value = tendance[last_valid_index]
+            tendance = tendance.fillna(method='bfill').fillna(method='ffill')
+            data_copy['electricity'] -= tendance
+        elif bords_tendance == 'delete':
+            tendance = tendance.dropna()
+            data_copy = data_copy[data_copy.index.isin(tendance.index)].copy()
+            data_copy['electricity'] -= tendance.values
+        else:
+            print("Erreur : Paramètre 'bords_tendance' non valide.")
+    else:
+        
+        print("Erreur : le format de la tendance est inconnu : essayer avec une valeur numérique ou un pd.Series")
+        
         
     ## -- Retrait de la saisonnalité
     
