@@ -7,6 +7,7 @@ Created on Mon Mar 18 19:49:59 2024
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import calendar
 
 from utility_tools import string_to_number_and_string
 
@@ -17,6 +18,7 @@ from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import r2_score
 import statsmodels.api as sm
+from sklearn.preprocessing import StandardScaler
 
 '''
 Fonction pour calculer la tendance et la saisonnalité d'une série temporelle,
@@ -81,6 +83,9 @@ def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saiso
         
     elif methode_saison=='mean':
         saison=data_year_wind_tendance['electricity']
+        saison.index=[str(saison.index.get_level_values('month')[i])+"-"+str(saison.index.get_level_values('day')[i]) for i in range(366)]
+        saison=saison.to_frame()
+                
         
     elif methode_saison[:5]=='sinus': # Si on souhaite utiliser une méthode sinus
         # Utilisation d'une moyenne mobile ou non pour le calcul du sinus
@@ -107,7 +112,19 @@ def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saiso
             fft[np.where(amplitudes < threshold)] = 0
 
             # Reconstruire le signal à l'aide de la transformée de Fourier inverse
-            saison = np.fft.ifft(fft).real
+            saison = pd.DataFrame(np.fft.ifft(fft).real)
+            saison = saison.rename(columns={0: 'electricity'})
+            
+            #Modification des indexs
+            
+            nouveau_index = []
+            jours_par_mois = [calendar.monthrange(2024, mois)[1] for mois in range(1, 13)]  # Nombre de jours par mois en 2024
+            for mois, jours in enumerate(jours_par_mois, start=1):
+                for jour in range(1, jours + 1):
+                    nouveau_index.append(f'{mois}-{jour}')
+                    
+            saison.index=nouveau_index
+                        
         else:
             print("Erreur : mauvais argument pour methode_saison : la méthode sinus ne comprends pas "+mode_mobile+"\nVoir la documentation")
     else:
@@ -127,6 +144,8 @@ bords_tendance : si la tendance est calculée à l'aide d'une moyenne mobile, il
     - si bords_tendance = 'delete' : les valeurs aux bords sont simplement supprimés
 Retourne la série nettoyée
 '''
+
+#Test ok
 def Retrait_Tendance_Saisonnalite(data, tendance, saisonnalite, bords_tendance = 'nearest'):
     
     ## -- Création d'une copie de data
@@ -155,7 +174,7 @@ def Retrait_Tendance_Saisonnalite(data, tendance, saisonnalite, bords_tendance =
         
         
     ## -- Retrait de la saisonnalité
-    
+
     for index in data_copy.index:
         data_copy.loc[index,'electricity']-=saisonnalite.loc[str(index.month)+"-"+str(index.day),'electricity']
         
@@ -167,16 +186,30 @@ Fonction pour ajouter la tendance et la saisonnalité à une série temporelle
 Actuellement, la tendance doit être une valeur constante, au format int/float
 Retourne la série reconstruite
 '''
-def Ajout_Tendance_Saisonnalite(data, tendance, saisonnalite):
+
+#test ok
+def Ajout_Tendance_Saisonnalite(data, tendance, saisonnalite, bords_tendance = 'nearest'):
     
     ## -- Création d'une copie de data
     data_copy=data.copy()
     
     ## -- Ajout de la tendance
-    if type(tendance) != int and type(tendance) != float :
-        print("Erreur : la fonction Ajout_Tendance_Saisonnalite ne fonction qu'avec une tendance constante (int ou float) actuellement")
-    else:
+    if type(tendance) == int or type(tendance) == float :
         data_copy['electricity']+=tendance
+    elif type(tendance) == pd.Series :
+        if bords_tendance == 'nearest':
+            first_valid_index = tendance.first_valid_index()
+            last_valid_index = tendance.last_valid_index()
+            first_valid_value = tendance[first_valid_index]
+            last_valid_value = tendance[last_valid_index]
+            tendance = tendance.fillna(method='bfill').fillna(method='ffill')
+            data_copy['electricity'] += tendance
+        elif bords_tendance == 'delete':
+            tendance = tendance.dropna()
+            data_copy = data_copy[data_copy.index.isin(tendance.index)].copy()
+            data_copy['electricity'] += tendance.values
+        else:
+            print("Erreur : Paramètre 'bords_tendance' non valide.")
         
     ## -- Ajout de la saisonnalité
     
@@ -196,6 +229,8 @@ Afficher à l'écran
 Note : Ici on utilise un processus ARMA car les séries temporelles étudiées sont déjà stationnaires
 Nous n'avons pas besoin de les différencier, d'où le paramètre constant d=0
 '''
+
+#Test ok
 
 def Arma_predict(data,p,q,graph_predict=False,graph_predict_last_year=False,graph_autocorrelation=False,error=False,d=0):
     arma = ARIMA(data, order=(p,d,q)).fit() # Par défaut, d=0 pour un processus ARMA
@@ -261,7 +296,8 @@ def Arma_predict(data,p,q,graph_predict=False,graph_predict_last_year=False,grap
 
 '''
 Fonction pour réaliser l'étude arimax d'une série temporelle data
-    Renvoie par défaut la prédiction réalisée à l'aide du modèle ARIMAX
+    Renvoie par défaut la prédiction réalisée à l'aide du modèle ARIMAX si train différent de 0
+    Sinon renvoie le résultat du modèle sur les données
     - data correspond aux données (à predire et exogène)
     - name_predict est le nom de la variable à prédire
 
@@ -271,15 +307,15 @@ Les paramètres p, d et q sont des paramètres de la fonction ARIMAX
     - par défaut, avce day_exog=0, on regarde les variables exogènes le jour même
     - Avec day_exog=1, on utilise non pas les données exogènes le jour même mais la veille
 
+Intervalle confiance uniquement avec jeu train
 
-Ajouter la notion de jeu de données train et test
 Ajouter infos sur les options
-Ajouter validation croisée
+Ajouter validation croisée (a voir plus tard, pas priorité)
 Ajouter option normalisation
-Ajouter l'impact des jours précédents
+Ajouter l'impact des jours précédents (pas priorité non plus)
 '''
 
-def Arimax_predict(data, name_predict, p, q, day_exog=0, int_conf=False, int_conf_1y=False ,error=False,d=0):
+def Arimax_predict(data, name_predict, p, q, day_exog=0, int_conf=False, int_conf_1y=False ,error=False,d=0, len_test=0, normalisation=False):    
     data_copy=data.copy()
     endog=data_copy[name_predict]
     if day_exog==0:
@@ -293,14 +329,39 @@ def Arimax_predict(data, name_predict, p, q, day_exog=0, int_conf=False, int_con
     else:
         print("Erreur : dans Arimax_predict, la valeur de day_exog est négative, elle doit être positive ou nulle")
     
-    # Ajustement du modèle ARIMAX avec les variables exogènes choisies
-    model = sm.tsa.ARIMA(endog=endog, exog=exog, order=(p, d, q))
-    results = model.fit()
+    if normalisation:
+        scaler = StandardScaler()
+        exog = pd.DataFrame(scaler.fit_transform(exog), columns=exog.columns, index=exog.index)
+        print(exog)
     
-    # Prédictions avec les variables exogènes
-    predictions = results.get_forecast(steps=len(endog), exog=exog)
-    predicted_means = predictions.predicted_mean
-    predicted_intervals = predictions.conf_int()
+    if len_test==0:
+        # Ajustement du modèle ARIMAX avec les variables exogènes choisies
+        model = sm.tsa.ARIMA(endog=endog, exog=exog, order=(p, d, q))
+        arimax = model.fit()
+        # Prédictions avec les variables exogènes
+        predictions = arimax.predict()
+        predictions = predictions.to_frame()
+        predictions = predictions.rename(columns={'predicted_mean': 'electricity'})
+        predicted_means = predictions
+
+    elif len_test > 0:
+        # Extraire les variables dépendantes et indépendantes pour l'entraînement et le test
+        endog_train = endog.iloc[:-len_test]
+        exog_train = exog[:-len_test]
+
+        endog_test = endog[-len_test:]
+        exog_test = exog[-len_test:]
+        # Prédictions avec les variables exogènes
+        model = sm.tsa.ARIMA(endog=endog_train, exog=exog_train, order=(p, d, q))
+        results = model.fit()
+        predictions = results.get_forecast(steps=len(endog_test), exog=exog_test)
+        predicted_means = predictions.predicted_mean
+        predicted_intervals = predictions.conf_int()
+        endog=endog_test #Pour la suite
+        print(endog)
+        
+    else:
+        print("Erreur : la taille du jeu de donnée train ne peut pas être négatif")
     
     if int_conf:
         # Dates de l'ensemble de test - pour l'axe des x
@@ -367,4 +428,4 @@ def Arimax_predict(data, name_predict, p, q, day_exog=0, int_conf=False, int_con
         print(f"R²: {r2}")
     
     
-    return predictions
+    return predicted_means

@@ -18,6 +18,8 @@ n'y est pas de doublon pour les données
     - Pour le sloaire : data_type = solar
 '''
 
+#A changer  : nom des dossiers (wind/weather/solar)
+
 def regroupement_data(link_data,annee_debut,annee_fin,data_type="wind"):
 # Création des variables pour vérifier que les données soient toutes différentes
     data_diffrent=True
@@ -55,10 +57,44 @@ def regroupement_data(link_data,annee_debut,annee_fin,data_type="wind"):
         #print(data_hour.head())
         data_day = data_hour.groupby(data_hour['time'].dt.date).agg({'t2m': 'mean', 'prectotland': 'mean', 'precsnoland': 'mean', 'snomas': 'mean', 'rhoa': 'mean', 'swgdn': 'mean', 'swtdn': 'mean', 'cldtot': 'mean'})
     elif data_type=="solar":
-        data_day = data_hour.groupby(data_hour['time'].dt.date).agg({'electricity': 'mean', 'irradiance_direct': 'mean', 'irradiance_diffuse': 'mean', 'temperature': 'mean', 'rhoa': 'mean', 'swgdn': 'mean', 'swtdn': 'mean', 'cldtot': 'mean'})
+        data_day = data_hour.groupby(data_hour['time'].dt.date).agg({'electricity': 'mean', 'irradiance_direct': 'mean', 'irradiance_diffuse': 'mean', 'temperature': 'mean'})
     data_day.index = pd.to_datetime(data_day.index)
     
     return data_hour,data_day
+
+
+def regroupement_data_all(link_data,annee_debut=[1980,1980,2000],annee_fin=[2023,2023,2023]):
+    
+    # Ouverture des données de vent, de solaire et météo
+    wind_link = link_data+"/Wind/"
+    data_wind_hour,data_wind_day = regroupement_data(wind_link,annee_debut[0],annee_fin[0],data_type="wind")
+    
+    solar_link = link_data+"/Solar/"
+    data_solar_hour,data_solar_day = regroupement_data(solar_link,annee_debut[1],annee_fin[1],data_type="solar")
+    
+    weather_link = link_data+"/Weather/"
+    data_weather_hour,data_weather_day = regroupement_data(weather_link,annee_debut[2],annee_fin[2],data_type="weather")
+    
+    
+    #Formatage des données dans un unique dataframe df_hour
+    df_hour = data_wind_hour.copy()
+    df_hour = df_hour.rename(columns={'electricity': 'wind_electricity'})
+    df_hour = df_hour.drop(['local_time'],axis=1)
+    df_hour = df_hour.set_index('time')
+    df_hour = pd.concat([df_hour,data_solar_hour.set_index('time'),data_weather_hour.set_index('time')],axis=1)
+    df_hour = df_hour.rename(columns={'electricity': 'solar_electricity'})
+    df_hour = df_hour.drop(['local_time','t2m'],axis=1)
+    
+    
+    #Formatage des données dans un unique dataframe df_day
+    df_day = data_wind_day.copy()
+    df_day = df_day.rename(columns={'electricity': 'wind_electricity'})
+    df_day = pd.concat([df_day,data_solar_day,data_weather_day],axis=1)
+    df_day = df_day.rename(columns={'electricity': 'solar_electricity'})
+    df_day = df_day.drop(['local_time','t2m'],axis=1)
+      
+    return df_hour,df_day
+
 
 
 '''
