@@ -64,25 +64,25 @@ def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saiso
     data_copy['electricity']=data_copy['electricity']-tendance
     data_copy['day']=data_copy.index.day
     data_copy['month']=data_copy.index.month
-    data_year_wind_tendance = data_copy.groupby(['month', 'day']).agg({'electricity': 'mean', 'wind_speed': 'mean'})
+    data_year_tendance = data_copy.groupby(['month', 'day']).agg({'electricity': 'mean'})
     
     # Création des index avec jour et mois
     dates = pd.date_range(start='2024-01-01', periods=366)
     indexes = [f"{date.month}-{date.day}" for date in dates]
     
-    pd.DataFrame(data_year_wind_tendance, index=indexes, columns=['electricity'])
+    pd.DataFrame(data_year_tendance, index=indexes, columns=['electricity'])
 
     
     if methode_saison[:6]=='mobile': # Si on souhaite utiliser une moyenne mobile
         int_mobile,mode_mobile=string_to_number_and_string(methode_saison[6:])
         if mode_mobile=='_d':
-            np_saison=pd.concat([data_year_wind_tendance['electricity'][(366-int_mobile):],data_year_wind_tendance['electricity'],data_year_wind_tendance['electricity'][:(int_mobile)]]).rolling(int_mobile, center=True).mean().to_numpy()[(int_mobile):(int_mobile+366)]
+            np_saison=pd.concat([data_year_tendance['electricity'][(366-int_mobile):],data_year_tendance['electricity'],data_year_tendance['electricity'][:(int_mobile)]]).rolling(int_mobile, center=True).mean().to_numpy()[(int_mobile):(int_mobile+366)]
             saison=pd.DataFrame(np_saison, index=indexes, columns=['electricity'])
         else:
             print("Erreur : mauvais argument pour methode_saison : la méthode mobile ne comprends pas "+mode_mobile+"\nVoir la documentation") 
         
     elif methode_saison=='mean':
-        saison=data_year_wind_tendance['electricity']
+        saison=data_year_tendance['electricity']
         saison.index=[str(saison.index.get_level_values('month')[i])+"-"+str(saison.index.get_level_values('day')[i]) for i in range(366)]
         saison=saison.to_frame()
                 
@@ -95,9 +95,9 @@ def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saiso
             
             # Effectuer une transformée de Fourier
             if int_mobile == 1:
-                fft = np.fft.fft(data_year_wind_tendance['electricity'])
+                fft = np.fft.fft(data_year_tendance['electricity'])
             else:
-                np_saison=pd.concat([data_year_wind_tendance['electricity'][(366-int_mobile):],data_year_wind_tendance['electricity'],data_year_wind_tendance['electricity'][:(int_mobile)]]).rolling(int_mobile, center=True).mean().to_numpy()[(int_mobile):(int_mobile+366)]
+                np_saison=pd.concat([data_year_tendance['electricity'][(366-int_mobile):],data_year_tendance['electricity'],data_year_tendance['electricity'][:(int_mobile)]]).rolling(int_mobile, center=True).mean().to_numpy()[(int_mobile):(int_mobile+366)]
                 fft = np.fft.fft(np_saison)
         
 
