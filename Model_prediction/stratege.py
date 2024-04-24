@@ -35,7 +35,8 @@ class PredicteurGlissant():
         self.k = (self.k + 1)%self.cyclique
         return self.somme
 
-
+# Pour recharger astocker GW à l'heure k dans les technologies présentes dans liste
+# On commence par recharger dans la première tech de la liste, puis la 2eme, ...
 def recharge_plusieur_techs(k, liste, astocker):
     astocker_init = astocker
     for tec in liste:
@@ -43,6 +44,7 @@ def recharge_plusieur_techs(k, liste, astocker):
     return astocker_init - astocker
 
 
+# idem decharge_plusieur_techs mais en faisant l'inverse
 def decharge_plusieur_techs(k, liste, aproduire):
     aproduire_init = aproduire
     for tec in liste:
@@ -50,28 +52,51 @@ def decharge_plusieur_techs(k, liste, aproduire):
     return aproduire_init - aproduire
 
 
+'''
+prodres : production résiduelle
+Step : ??
+Battery : ??
+Gas : ??
+Lake : ??
+Nuclear : ??
+'''
 def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear):
     """
 
     """
-    pred_nuke24_min = PredicteurGlissant(Nuclear.p_min_effective)
+    # Prévision de production minimum nucléaire dans les prochaines 24 heures
+    pred_nuke24_min = PredicteurGlissant(Nuclear.p_min_effective) 
+    # Prévision de production maximale nucléaire dans les prochaines 24 heures
     pred_muke24_max = PredicteurGlissant(Nuclear.p_max_effective)
+    # Prévision de production résiduelles dans les prochaines 24 heures
     pred_prodres24 = PredicteurGlissant(lambda k: prodres[k])
 
+    # Capacité maximale de Step + Batterie
     cap_sb_max = Step.capacité + Battery.capacité
+    # Capacité dans une situation prévue normale
     cap_sb_milieu = 0.5 * cap_sb_max
+    # Capacité dans une situation prévue d'abondance
     cap_sb_abondance = 0
+    # Capacité dans une situation prévue de pénurie
     cap_sb_pénurie = cap_sb_max
+    # ???
     sb_écart = 0
-
+    
+    # Technologies de stockage sans les lacs
     tecstock = {"Battery": Battery, "Step": Step}
 
+    # Technologies de stockage avec les lacs
     tecdestock = {"Lake": Lake, "Step": Step, "Battery": Battery}
 
+    # On initialise le surplus sur le même nombre d'heure que la production résiduelle
     surplus = np.zeros(len(prodres))
+    # On initialise le manque sur le même nombre d'heure que la production résiduelle
     manque = np.zeros(len(prodres))
+    #Pour K dans toutes les heures de l'année
     for k in range(H):
+        # On passe au rang suivant pour nuke24min et nuke24max
         nuke24min = pred_nuke24_min.__next__()
+        
         nuke24max = pred_muke24_max.__next__()
         prodres24 = pred_prodres24.__next__()
         Lake.recharger(k)
