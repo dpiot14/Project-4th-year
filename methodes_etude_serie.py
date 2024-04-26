@@ -435,7 +435,7 @@ def Arimax_predict(data, name_predict, p, q, day_exog=0, int_conf=False, int_con
 
 # A expliquer
 
-def choix_tendance_saisonnalite(data, tendance_list, saisonnalite_list, prop_test=0.25):
+def choix_tendance_saisonnalite(data, tendance_list, saisonnalite_list, prop_test=0.25, graph_loi = False):
     
     len_data = data.shape[0]
     len_test = int(len_data*prop_test)
@@ -443,37 +443,37 @@ def choix_tendance_saisonnalite(data, tendance_list, saisonnalite_list, prop_tes
     data_train = data.iloc[:len_train]
     data_test=data.iloc[len_train:]
     
-    Mae = pd.DataFrame(index=tendance_list, columns=saisonnalite_list)
+    Mae = pd.DataFrame(index=saisonnalite_list, columns=tendance_list)
     
     for methode_tendance in tendance_list:
         for methode_saisonnalite in saisonnalite_list:
             tendance,saisonnalite = Etude_Tendance_Saisonnalite_annuelle(data_train, methode_tend=methode_tendance,methode_saison=methode_saisonnalite)
             residus = Retrait_Tendance_Saisonnalite(data_test, tendance, saisonnalite)
-            Mae.loc[methode_tendance,methode_saisonnalite]=residus['electricity'].abs().mean()
+            Mae.loc[methode_saisonnalite,methode_tendance]=residus['electricity'].abs().mean()
             
-            # Affichage historigramme log-résidus
-            plt.figure(figsize=(10,2))
-            plt.subplot(1,5,1)
-            sns.histplot(residus['electricity'], kde=True)
-            
-            # Affichage QQ-plot résidus
-            plt.subplot(1,5,2)
-            stats.probplot(residus['electricity'], dist="norm", plot=plt)
-            
-            
-            # Affichage historigramme log-résidus
-            plt.subplot(1,5,3)
-            sns.histplot(residus['electricity'].apply(np.log), kde=True)
-            plt.title('QQ Plot résidus puis log-résidus'+' Tendance : '+methode_tendance+' Saisonnalité : '+methode_saisonnalite)
-            
-            # Affichage QQ-plot log-résidus
-            plt.subplot(1,5,4)
-            stats.probplot(residus['electricity'].apply(np.log), dist="norm", plot=plt)
-            
-            # Affichage résidus poisson
-            plt.subplot(1,5,5)
-            sns.histplot(residus['electricity']-residus['electricity'].min(), kde=True)
-            plt.show()
+            if graph_loi:
+                # Affichage historigramme log-résidus
+                plt.figure(figsize=(10,2))
+                plt.subplot(1,5,1)
+                sns.histplot(residus['electricity'], kde=True)
+                
+                # Affichage QQ-plot résidus
+                plt.subplot(1,5,2)
+                stats.probplot(residus['electricity'], dist="norm", plot=plt)
+                
+                # Affichage historigramme log-résidus
+                plt.subplot(1,5,3)
+                sns.histplot(residus['electricity'].apply(np.log), kde=True)
+                plt.title('QQ Plot résidus puis log-résidus'+' Tendance : '+methode_tendance+' Saisonnalité : '+methode_saisonnalite)
+                
+                # Affichage QQ-plot log-résidus
+                plt.subplot(1,5,4)
+                stats.probplot(residus['electricity'].apply(np.log), dist="norm", plot=plt)
+                
+                # Affichage résidus poisson
+                plt.subplot(1,5,5)
+                sns.histplot(residus['electricity']-residus['electricity'].min(), kde=True)
+                plt.show()
             
     return Mae
             
