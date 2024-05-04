@@ -5,9 +5,13 @@ Created on Thu Apr 25 20:17:50 2024
 @author: Manon Julia
 """
 
-import climix.technologies as te
+import Model_prediction.technologies as te
 import numpy as np
 import methodes_etude_serie as meth
+import stratege as strat1
+import pandas as pd
+
+import renewable_study as rw
 
 #########################
 ### TOUT EST EN GW(h) ###
@@ -16,13 +20,16 @@ import methodes_etude_serie as meth
 # Nombre d'heures dans l'année
 H = (24 * 365)
 
-class PredicteurDeCharge():
-    def __init__(self, méthode, horizon=24, cyclique=H):
-        self.horizon = horizon*10 # ???
+
+#Horizon est par défaut en jours maintenant
+class PredicteurGlissant():
+    def __init__(self, méthode, horizon=1, cyclique=H):
+        self.horizon_d = horizon  #En jours
+        self.horizon_h = horizon*24  #En heures
         self.méthode = méthode
         self.trainard = 0
         self.somme=0
-        self.set_somme_init(start=0, stop=self.horizon)
+        self.set_somme_init(start=0, stop=self.horizon_h)
         self.cyclique=cyclique
         self.k=0
 
@@ -34,55 +41,35 @@ class PredicteurDeCharge():
     def __next__(self):
         self.somme -= self.trainard
         self.trainard = self.méthode(self.k)
-        self.somme += self.méthode((self.k+self.horizon-1)%self.cyclique)
+        self.somme += self.méthode((self.k+self.horizon_h-1)%self.cyclique)
+        self.k = (self.k + 1)%self.cyclique
+        return self.somme
+
+
+class PredicteurRenouvelable():
+    def __init__(self, méthode, horizon=1, cyclique=H, IC=[0.95,-1]):
+        self.horizon_d = horizon  #En jours
+        self.horizon_h = horizon*24  #En heures
+        self.méthode = méthode
+        self.trainard = 0
+        self.somme=0
+        self.set_somme_init(start=0, stop=self.horizon_h)
+        self.cyclique=cyclique
+        self.k=0
+
+    def set_somme_init(self, start, stop):
+        self.somme = 0
+        for k in range(start,stop-1):
+            self.somme += self.méthode(k)
+
+    def __next__(self):
+        self.somme -= self.trainard
+        self.trainard = self.méthode(self.k)
+        self.somme += self.méthode((self.k+self.horizon_h-1)%self.cyclique)
         self.k = (self.k + 1)%self.cyclique
         return self.somme
     
-class PredicteurDeChargeMeteo():
-    
-def predicteur_meteo():
-    """
-    Prend les données météos réelles, génère une erreur, renvoie le resultat
-    
-    Args
-    - vent
-    - couverture nuageuse
-    - irradiance solaire
-    - précipitations totales
 
-    Returns
-    Prévision météo
-
-
-    """
-    return None
-
-def predict_load_factor(tedance, saisonnalite, j_asimu, p=0.45645229):
-    
-    """
-    Fonction qui vise à prédire un facteur de charge pour un nombre de jours données
-    Args 
-    -------
-        tendance = la tendnace de la série à reconstruire
-        saisonnalite = la saisonnalité de la série à reconstruire
-        j_asimu = nombre de jours à simuler
-        p = coefficient de corrélation avec les résidus de la veille
-            par défaut, p=0.45645229 qui est la valeur déterminée par notre modélisation ARMA  
-
-    Returns
-    -------
-    Serie 
-        Série resconstruite avec ajout de la tendance et saisonnaité sur la prédiction de résidus
-
-    """
-    # Génère un résidu gaussien (normal) avec une moyenne de 0 et un écart type de 1
-    residual = np.random.normal(0, 1)
-    for j in range(len(j_asimu)):
-        residual = p*residual + (1-p)*np.random.normal(0, 1)
-    
-    serie = meth.Ajout_Tendance_Saisonnalite(residual, tendance, saisonnalite, bords_tendance = 'nearest') 
-    return serie
-    
 # Pour recharger astocker GW à l'heure k dans les technologies présentes dans liste
 # On commence par recharger dans la première tech de la liste, puis la 2eme, ...
 def recharge_plusieur_techs(k, liste, astocker):
@@ -100,16 +87,48 @@ def decharge_plusieur_techs(k, liste, aproduire):
     return aproduire_init - aproduire
 
 
-def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear):
+def add_error(mae, size):
+    return np.random.normal(loc=0, scale=mae, size=size)
+
+
+'''On a pas besoin de prendre les valeurs renouvelables'''
+'''Pas le détail pour les stockages, je met donc tout dans PHS'''
+
+
+#Dans les IC, le premier doit être celui pour pénurie, le 2ème pour abondance
+def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, fac_IC,H):
     """
 
     """
+    
+    #On initialise les éléments à renvoyer dans la fonction
+    # Phs,Battery,Methanation,Lake, thermal, Nucléaire
+    ''''''
+    Phs_tab = np.zeros(H)
+    Battery_tab = np.zeros(H)
+    Gas_tab = np.zeros(H)
+    Lake_tab = np.zeros(H)
+    Thermal_tab = np.zeros(H)
+    Nuc_tab = np.zeros(H)
+    ''''''
+    
     # Prévision de production minimum nucléaire dans les prochaines 24 heures
-    pred_nuke24_min = PredicteurGlissant(Nuclear.p_min_effective) 
+    pred_nuke24_min = strat1.PredicteurGlissant(Nuclear.p_min_effective) 
     # Prévision de production maximale nucléaire dans les prochaines 24 heures
-    pred_muke24_max = PredicteurGlissant(Nuclear.p_max_effective)
-    # Prévision de production résiduelles dans les prochaines 24 heures
-    pred_prodres24 = PredicteurGlissant(lambda k: prodres[k])
+    pred_muke24_max = strat1.PredicteurGlissant(Nuclear.p_max_effective)
+    # Création du Prédicteur Glissant pour la production réelle
+    pred_prodres24 = strat1.PredicteurGlissant(lambda k: prodres[k])
+    
+    pred_prodres_IC = {}
+    # Création des prédicteurs glissant pour les IC onshores
+    keys = fac_IC['on'].keys()
+    pred_prodres_IC['on']['penurie'] = strat1.PredicteurGlissant(lambda k: fac_IC['on'][keys[0]][k])
+    pred_prodres_IC['on']['abondance'] = strat1.PredicteurGlissant(lambda k: fac_IC['on'][keys[1]][k])
+    
+    # Création des prédicteurs glissant pour les IC solaires
+    keys = fac_IC['pv'].keys()
+    pred_prodres_IC['pv']['penurie'] = strat1.PredicteurGlissant(lambda k: fac_IC['pv'][keys[0]][k])
+    pred_prodres_IC['pv']['abondance'] = strat1.PredicteurGlissant(lambda k: fac_IC['pv'][keys[1]][k])
 
     # Capacité maximale de Step + Batterie
     cap_sb_max = Step.capacité + Battery.capacité
@@ -138,12 +157,19 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear):
         
         nuke24max = pred_muke24_max.__next__() # On récupère le rang suivant
         prodres24 = pred_prodres24.__next__()
+        
+        pred_prodres_IC['on']['penurie'] = pred_prodres_IC['on']['penurie'].__next__()
+        pred_prodres_IC['on']['abondance'] =  pred_prodres_IC['on']['abondance'].__next__()
+        pred_prodres_IC['pv']['penurie'] = pred_prodres_IC['pv']['penurie'].__next__()
+        pred_prodres_IC['pv']['abondance'] =  pred_prodres_IC['pv']['abondance'].__next__()
+        
+        
         Lake.recharger(k) # On recherge les lacs
-        if prodres24 + nuke24max < 0:
+        if pred_prodres_IC['on']['penurie'] + pred_prodres_IC['pv']['penurie'] + nuke24max < 0:
             état = "pénurie"
             consigne_SB = cap_sb_pénurie 
 
-        elif prodres24 + nuke24min > 0:
+        elif  pred_prodres_IC['on']['abondance'] + pred_prodres_IC['pv']['abondance'] + nuke24min > 0:
             état = "abondance"
             consigne_SB = cap_sb_abondance
 
@@ -154,8 +180,11 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear):
         sb_écart = consigne_SB - cap_sb_milieu # Ecart entre la consigne et la réalisation
 
         prodres_k = prodres[k]
-
-        prodres_k += Lake.produire_minimum(k)
+        
+        temp = Lake.produire_minimum(k)
+        prodres_k += temp
+        Lake_tab[k] += temp
+        
 
         stock_SB = Step.stock[k] + Battery.stock[k] # On récupère la valeur des stocks
         a_decharger_SB = stock_SB - consigne_SB
@@ -165,48 +194,78 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear):
 
         if état == "pénurie":
             # Nuke au max
-            prodres_k += Nuclear.pilote_prod(k, Nuclear.Pout(k)) 
+            temp = Nuclear.pilote_prod(k, Nuclear.Pout(k)) 
+            prodres_k += temp
+            Nuc_tab[k] = temp
+            
             if prodres_k > 0:
                 #reliquat on recharge
-                prodres_k -= recharge_plusieur_techs(k, liste=[Battery, Step, Gas], astocker=prodres_k)
-                #reliquat on risuqe d'écrêter : on annule le trop
+                temp = recharge_plusieur_techs(k, liste=[Battery, Step, Gas], astocker=prodres_k)
+                Phs_tab[k] = -temp
+                prodres_k -= temp
+                #reliquat on risque d'écrêter : on annule le trop
                 if prodres_k > 0:
-                    prodres_k -= Nuclear.pilot_annule_prod(k, prodres_k)
-                surplus[k]= prodres_k
+                    temp = Nuclear.pilot_annule_prod(k, prodres_k)
+                    prodres_k -= temp
+                    Nuc_tab[k] -= temp
+                    
+                surplus[k] = prodres_k
 
             else:
                 aproduire_k = -prodres_k
                 if stock_SB > 0.3 * cap_sb_max:
-                    aproduire_k -= decharge_plusieur_techs(k, liste=[Step, Battery, Lake, Gas], aproduire=aproduire_k)
+                    temp = decharge_plusieur_techs(k, liste=[Step, Battery, Lake, Gas], aproduire = aproduire_k)
+                    aproduire_k -= temp
+                    Phs_tab[k] = temp
                 else:
-                    aproduire_k -= decharge_plusieur_techs(k, liste=[Lake, Step, Battery, Gas], aproduire=aproduire_k)
+                    temp = decharge_plusieur_techs(k, liste=[Lake, Step, Battery, Gas], aproduire=aproduire_k)
+                    aproduire_k -= temp
+                    Phs_tab[k] = temp
                 manque[k] = aproduire_k
 
         elif état == "abondance":
             # nuke au min
-            prodres_k += Nuclear.pilote_prod(k, 0)
+            temp = Nuclear.pilote_prod(k, 0)
+            prodres_k += temp
+            Nuc_tab[k] = temp
             # gaz à fond
-            prodres_k -= Gas.recharger(k, Gas.Pin(k))
+            temp = Gas.recharger(k, Gas.Pin(k))
+            prodres_k -= temp
+            Gas_tab[k] -= temp
 
             if a_decharger_SB < 0:
                 # les batteries veulent remonter à 30% tant mieux !
-                prodres_k -= recharge_plusieur_techs(k, liste=[Step, Battery], astocker= -a_decharger_SB)
+                temp = recharge_plusieur_techs(k, liste=[Step, Battery], astocker= -a_decharger_SB)
+                prodres_k -= temp
+                Phs_tab[k] -= temp
             else:
                 # on prend le risque d'écrêter
-                prodres_k += decharge_plusieur_techs(k, liste=[Battery, Step], aproduire=a_decharger_SB)
+                temp = decharge_plusieur_techs(k, liste=[Battery, Step], aproduire=a_decharger_SB)
+                prodres_k += temp
+                Phs_tab[k] += temp
+                
 
             if prodres_k > 0:
                 #on écrêterait
-                prodres_k -= recharge_plusieur_techs(k, liste=[Step, Battery], astocker=prodres_k)
+                temp = recharge_plusieur_techs(k, liste=[Step, Battery], astocker=prodres_k)
+                prodres_k -= temp
+                Phs_tab[k] -= temp
                 surplus[k] = prodres_k
             else:
                 aproduire = -prodres_k
                 # un peu de nuke pour recharger le gas et batt
-                aproduire -= Nuclear.pilote_prod(k, aproduire)
+                temp = Nuclear.pilote_prod(k, aproduire)
+                aproduire -= temp
+                Nuc_tab[k] += temp
                 # on risque la pénurie finalement : on annule la production de H2
-                aproduire -= Gas.annuler_recharger(k, aanuler= aproduire)
+                temp = Gas.annuler_recharger(k, aanuler= aproduire)
+                aproduire -= temp
+                Gas_tab[k] += temp
                 # on vide les batterie sous 30% puis lac puis Gas fossile
-                aproduire -= decharge_plusieur_techs(k, liste=[Battery, Step, Lake, Gas], aproduire=aproduire)
+                temp = decharge_plusieur_techs(k, liste=[Battery, Step, Lake, Gas], aproduire=aproduire)
+                aproduire -= temp
+                Phs_tab[k] += temp
+                
                 manque[k] = aproduire
 
         else:
@@ -216,34 +275,149 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear):
             #regul batteries
             if a_decharger_SB < 0:
                 # les batteries veulent remonter à 50%
-                prodres_k -= recharge_plusieur_techs(k, liste=[Step, Battery],
+                temp = recharge_plusieur_techs(k, liste=[Step, Battery],
                                                      astocker=-a_decharger_SB)
+                prodres_k -= temp
+                Phs_tab[k] -= temp
 
             else:
                 # on prend le risque d'écrêter
-                prodres_k += decharge_plusieur_techs(k, liste=[Battery, Step],
+                temp = decharge_plusieur_techs(k, liste=[Battery, Step],
                                                      aproduire=a_decharger_SB)
+                prodres_k += temp
+                Phs_tab[k] += temp
+                
             # gaz à fond
-            prodres_k -= Gas.recharger(k, Nuclear.Pout(k) + prodres_k) 
+            temp = Gas.recharger(k, Nuclear.Pout(k) + prodres_k) 
+            prodres_k -= temp
+            Gas_tab[k] -= temp
             # max de Gaz que nucléaire + renouvelable permet
 
-            prodres_k += Nuclear.pilote_prod(k, -prodres_k) # Ajout du nucléaire nécessaire
+            temp = Nuclear.pilote_prod(k, -prodres_k) # Ajout du nucléaire nécessaire
+            prodres_k += temp
+            Nuc_tab[k]+= temp
+            
 
             if prodres_k > 0:
                 # on écrêterait
-                prodres_k -=  recharge_plusieur_techs(k, liste=[Step, Battery],
+                temp = recharge_plusieur_techs(k, liste=[Step, Battery],
                                                       astocker=prodres_k)
+                prodres_k -= temp
+                Phs_tab[k] -= temp
                 surplus[k] = prodres_k
             else:
                 # risque de pénurie
-                prodres_k += decharge_plusieur_techs(k, liste=[Lake, Step, Battery, Gas],
+                temp = decharge_plusieur_techs(k, liste=[Lake, Step, Battery, Gas],
                                                      aproduire=-prodres_k)
+                prodres_k += temp
+                Phs_tab[k] += temp
                 manque[k] = -prodres_k
         pass
 
-
-
-
-
-
     return surplus, manque
+
+
+# Utilisé pour calculer la production résiduelle
+
+
+#On ajoute dans reg les classes représentant chaque région sous forme d'un dictionnaire
+
+#Si IC différent de None : on génère les séries avec les intervalles de confiance corespondants
+#Les IC sont au format [seuil, sens]
+#On considère que les IC à générer sont les même pour toutes les sources renouvelables
+#Sinon, on génère uniquement les intervalles de bases
+
+#Ici, on doit juste changer les données utilisées
+
+# Expl de base
+IC = [[98,-1],[67,1]]
+mae_wind = 0.2
+mae_solar = 0.2
+
+def calculer_prod_non_pilot(mix, nb, reg, j_asimu=365, IC=[[95,-1],[95,1]]):
+
+    # On récupère les facteurs de charge des données
+    # A modifier je pense, en remplaçant avec les facteurs de charge généré
+
+    
+    fdc_on = {}
+    fdc_pv = {}
+    fdc_on_approx = {}
+    fdc_pv_approx = {}
+    for r in reg.keys():
+        fdc_on[r] = reg[r].generate_load_factor_wind(j_asimu = j_asimu, time_step = 'hour')
+        fdc_pv[r] = reg[r].generate_load_factor_solar(j_asimu = j_asimu, time_step = 'hour')
+        fdc_on_approx[r] = fdc_on[r] + add_error(mae_wind, j_asimu*24)
+        fdc_pv_approx[r] = fdc_pv[r] + add_error(mae_solar, j_asimu*24)
+        
+        
+    fdc_on_IC = {}
+    fdc_pv_IC = {}
+    for r in reg.keys():
+        for i in IC:
+            fdc_on_IC[i] += fdc_on_approx[r] + reg[r].arma_proba_distribustion_wind.IC(proba = i[0], sens = i[1])
+            fdc_pv_IC[i] += fdc_pv_approx[r] + reg[r].arma_proba_distribustion_solar.IC(proba = i[0], sens = i[1])
+            
+    fdc_IC= {}
+    fdc_IC['on'] = fdc_on_IC
+    fdc_IC['pv'] = fdc_pv_IC
+    
+    # Je gruge pour pas avoir de bug, je le met à l'identique par rapport à fdc_on
+    fdc_off = fdc_on
+
+    # Puissance d'un pion
+    powOnshore = 1.4
+    powOffshore = 2.4
+    powPV = 3
+
+    # On fait la somme des prods par region pour chaque techno (FacteurDeCharge * NbPions * PuissanceParPion)
+    powers_renouvables = {"eolienneON": 1.4,
+                          "panneauPV": 3,
+                          "eolienneOFF": 3}
+    # note de Hugo, je ne sais pas à quoi sert cette ligne, l'effet de la carte aléa correspondant est déjà écrit à un autre endroit.
+    # Alea +15% prod PV
+    if "innovPV" in mix:
+        fdc_pv += mix["innovPV"] * fdc_pv
+
+    reg_non_off_shore = [ "bfc", "ara", "cvl", "idf", "est"]  # liste des régions sans off_shore
+
+    prodOnshore = np.zeros(H)
+    prodOffshore = np.zeros(H)
+    prodPV = np.zeros(H)
+
+    prod = {"eolienneON": np.zeros(H),
+                "panneauPV": np.zeros(H),
+                "eolienneOFF": np.zeros(H)}
+    prod_reg={}
+    for reg in mix['unites']: # Pour chaque région dans mix['unites']
+        prod_reg[reg] = {}  # La production de la région est initialisée en dictionnaire
+        for p, pow in powers_renouvables.items():   # Pour chaque source renouvelable    pow ???
+            if p=="eolienneOFF" and reg in reg_non_off_shore:  # Si eolienne offshore sur région non offshore -> 0
+                prod_reg[reg][p] = np.zeros(H)
+            else:
+                # Sinon : prod_reg pour la région et la ressource = facteur de charge de la region * nb[reg][p] * pow
+                prod_reg[reg][p] = np.array(fdc_on[reg]) * nb[reg][p] * pow
+                prod[p] += prod_reg[reg][p] #On ajoute la prod de ce moyen de prodcution dans la prod totale française du moyen de production
+
+
+    # carte alea MEMFDC (lance 1)
+    if mix["alea"] == "MEMFDC1" or mix["alea"] == "MEMFDC2" or mix["alea"] == "MEMFDC3":
+        prod_reg["cvl"]["eolienneON"] *= 0.9
+
+
+
+    # Definition des productions electriques des rivières et lacs
+    coefriv = 13.
+    river = pd.read_csv("run_of_river.csv", header=None)
+    river.columns = ["heures", "prod2"]
+    rivprod = np.array(river.prod2) * coefriv
+
+
+    #On enregistre dans les chroniques les productions de chaque moyen de production
+    chroniques = {"prodOffshore": prod["eolienneOFF"],
+                  "prodOnshore": prod["eolienneON"],
+                  "prodPV": prod["panneauPV"],
+                  "rivprod": rivprod,
+                  }
+    prod['regions']=prod_reg
+    return chroniques, prod, fdc_IC
