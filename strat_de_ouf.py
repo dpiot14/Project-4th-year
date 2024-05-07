@@ -96,7 +96,7 @@ def add_error(mae, size):
 
 
 #Dans les IC, le premier doit être celui pour pénurie, le 2ème pour abondance
-def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, fac_IC,H):
+def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, Conso, fac_IC, H):
     """
 
     """
@@ -120,15 +120,11 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, fac_IC,H):
     pred_prodres24 = strat1.PredicteurGlissant(lambda k: prodres[k])
     
     pred_prodres_IC = {}
-    # Création des prédicteurs glissant pour les IC onshores
-    keys = fac_IC['on'].keys()
-    pred_prodres_IC['on']['penurie'] = strat1.PredicteurGlissant(lambda k: fac_IC['on'][keys[0]][k])
-    pred_prodres_IC['on']['abondance'] = strat1.PredicteurGlissant(lambda k: fac_IC['on'][keys[1]][k])
-    
-    # Création des prédicteurs glissant pour les IC solaires
-    keys = fac_IC['pv'].keys()
-    pred_prodres_IC['pv']['penurie'] = strat1.PredicteurGlissant(lambda k: fac_IC['pv'][keys[0]][k])
-    pred_prodres_IC['pv']['abondance'] = strat1.PredicteurGlissant(lambda k: fac_IC['pv'][keys[1]][k])
+
+    # Création des prédicteurs glissant pour les IC
+    keys = list(fac_IC.keys())
+    pred_prodres_IC['penurie'] = strat1.PredicteurGlissant(lambda k: fac_IC[keys[0]][k])
+    pred_prodres_IC['abondance'] = strat1.PredicteurGlissant(lambda k: fac_IC[keys[1]][k])
 
     # Capacité maximale de Step + Batterie
     cap_sb_max = Step.capacité + Battery.capacité
@@ -150,6 +146,8 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, fac_IC,H):
     surplus = np.zeros(len(prodres))
     # On initialise le manque sur le même nombre d'heure que la production résiduelle
     manque = np.zeros(len(prodres))
+    # On initialise l'état sur la même taille. 0 = pénurie, 100 = flex, 200 = abondance
+    etat_tab = np.zeros(len(prodres))
     #Pour K dans toutes les heures de l'année
     for k in range(H):
         # On passe au rang suivant pour nuke24min et nuke24max
@@ -158,24 +156,25 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, fac_IC,H):
         nuke24max = pred_muke24_max.__next__() # On récupère le rang suivant
         prodres24 = pred_prodres24.__next__()
         
-        pred_prodres_IC['on']['penurie'] = pred_prodres_IC['on']['penurie'].__next__()
-        pred_prodres_IC['on']['abondance'] =  pred_prodres_IC['on']['abondance'].__next__()
-        pred_prodres_IC['pv']['penurie'] = pred_prodres_IC['pv']['penurie'].__next__()
-        pred_prodres_IC['pv']['abondance'] =  pred_prodres_IC['pv']['abondance'].__next__()
+        sum_prodres_IC_p = pred_prodres_IC['penurie'].__next__()
+        sum_prodres_IC_a =  pred_prodres_IC['abondance'].__next__()
         
-        
+        print(nuke24min,nuke24max)
         Lake.recharger(k) # On recherge les lacs
-        if pred_prodres_IC['on']['penurie'] + pred_prodres_IC['pv']['penurie'] + nuke24max < 0:
+        if sum_prodres_IC_p + nuke24max - Conso[k]< 0:
             état = "pénurie"
             consigne_SB = cap_sb_pénurie 
+            etat_tab[k]=0
 
-        elif  pred_prodres_IC['on']['abondance'] + pred_prodres_IC['pv']['abondance'] + nuke24min > 0:
+        elif sum_prodres_IC_a + nuke24min - Conso[k] > 0:
             état = "abondance"
             consigne_SB = cap_sb_abondance
+            etat_tab[k]=200
 
         else:
             état = "flexible"
             consigne_SB = cap_sb_milieu + (sb_écart * 0.99) # 0.99 pour variations progressives
+            etat_tab[k]=100
 
         sb_écart = consigne_SB - cap_sb_milieu # Ecart entre la consigne et la réalisation
 
@@ -194,7 +193,8 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, fac_IC,H):
 
         if état == "pénurie":
             # Nuke au max
-            temp = Nuclear.pilote_prod(k, Nuclear.Pout(k)) 
+            temp = Nuclear.pilote_prod(k, Nuclear.Pout(k))
+            print(temp)
             prodres_k += temp
             Nuc_tab[k] = temp
             
@@ -227,6 +227,7 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, fac_IC,H):
             # nuke au min
             temp = Nuclear.pilote_prod(k, 0)
             prodres_k += temp
+            print(temp)
             Nuc_tab[k] = temp
             # gaz à fond
             temp = Gas.recharger(k, Gas.Pin(k))
@@ -314,7 +315,7 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, fac_IC,H):
                 manque[k] = -prodres_k
         pass
 
-    return surplus, manque
+    return surplus, manque, Phs_tab, Battery_tab, Gas_tab, Lake_tab, Thermal_tab, Nuc_tab, etat_tab
 
 
 # Utilisé pour calculer la production résiduelle
@@ -334,11 +335,23 @@ IC = [[98,-1],[67,1]]
 mae_wind = 0.2
 mae_solar = 0.2
 
-def calculer_prod_non_pilot(mix, nb, reg, j_asimu=365, IC=[[95,-1],[95,1]]):
+#mix à supprimer des paramètres
 
+def calculer_prod_non_pilot(mix, nb, reg, j_asimu=365, IC=[["penurie",0.95,-1],["surplus",0.95,1]]):
+    
+    
+    # Puissance d'un pion
+    powOnshore = 1.4
+    powOffshore = 2.4
+    powPV = 3
+
+    # On fait la somme des prods par region pour chaque techno (FacteurDeCharge * NbPions * PuissanceParPion)
+    powers_renouvables = {"eolienneON": 1.4,
+                          "panneauPV": 3,
+                          "eolienneOFF": 2.4}
+    
     # On récupère les facteurs de charge des données
     # A modifier je pense, en remplaçant avec les facteurs de charge généré
-
     
     fdc_on = {}
     fdc_pv = {}
@@ -353,31 +366,34 @@ def calculer_prod_non_pilot(mix, nb, reg, j_asimu=365, IC=[[95,-1],[95,1]]):
         
     fdc_on_IC = {}
     fdc_pv_IC = {}
-    for r in reg.keys():
-        for i in IC:
-            fdc_on_IC[i] += fdc_on_approx[r] + reg[r].arma_proba_distribustion_wind.IC(proba = i[0], sens = i[1])
-            fdc_pv_IC[i] += fdc_pv_approx[r] + reg[r].arma_proba_distribustion_solar.IC(proba = i[0], sens = i[1])
+    fdc_all_IC = {}
+
+    for i in IC:
+        fdc_on_IC[i[0]]=0
+        fdc_pv_IC[i[0]]=0
+        fdc_all_IC[i[0]]=0
+        for r in reg.keys():
+            fdc_temp = (fdc_on_approx[r] + reg[r].arma_proba_distribustion_wind.IC(proba = i[1], sens = i[2]))*nb[r]["eolienneON"]*powers_renouvables["eolienneON"]
+            if fdc_temp < 0 : fdc_temp = 0
+            if fdc_temp > 1 : fdc_temp = 1
+            fdc_on_IC[i[0]] += fdc_temp
+            fdc_all_IC[i[0]] += fdc_on_IC[i[0]]
+            
+            fdc_temp = (fdc_pv_approx[r] + reg[r].arma_proba_distribustion_solar.IC(proba = i[1], sens = i[2]))*nb[r]["panneauPV"]*powers_renouvables["panneauPV"]
+            if fdc_temp < 0 : fdc_temp = 0
+            if fdc_temp > 1 : fdc_temp = 1
+            fdc_pv_IC[i[0]] += fdc_temp
+            fdc_all_IC[i[0]] += fdc_temp
+            
             
     fdc_IC= {}
     fdc_IC['on'] = fdc_on_IC
     fdc_IC['pv'] = fdc_pv_IC
+    fdc_IC['all'] = fdc_all_IC
     
     # Je gruge pour pas avoir de bug, je le met à l'identique par rapport à fdc_on
     fdc_off = fdc_on
 
-    # Puissance d'un pion
-    powOnshore = 1.4
-    powOffshore = 2.4
-    powPV = 3
-
-    # On fait la somme des prods par region pour chaque techno (FacteurDeCharge * NbPions * PuissanceParPion)
-    powers_renouvables = {"eolienneON": 1.4,
-                          "panneauPV": 3,
-                          "eolienneOFF": 3}
-    # note de Hugo, je ne sais pas à quoi sert cette ligne, l'effet de la carte aléa correspondant est déjà écrit à un autre endroit.
-    # Alea +15% prod PV
-    if "innovPV" in mix:
-        fdc_pv += mix["innovPV"] * fdc_pv
 
     reg_non_off_shore = [ "bfc", "ara", "cvl", "idf", "est"]  # liste des régions sans off_shore
 
@@ -389,15 +405,19 @@ def calculer_prod_non_pilot(mix, nb, reg, j_asimu=365, IC=[[95,-1],[95,1]]):
                 "panneauPV": np.zeros(H),
                 "eolienneOFF": np.zeros(H)}
     prod_reg={}
-    for reg in mix['unites']: # Pour chaque région dans mix['unites']
-        prod_reg[reg] = {}  # La production de la région est initialisée en dictionnaire
+    for r in reg: # Pour chaque région dans mix['unites']
+        prod_reg[r] = {}  # La production de la région est initialisée en dictionnaire
         for p, pow in powers_renouvables.items():   # Pour chaque source renouvelable    pow ???
+        
+        # r enlevé pour l'instant, à gérer
+        
+        
             if p=="eolienneOFF" and reg in reg_non_off_shore:  # Si eolienne offshore sur région non offshore -> 0
-                prod_reg[reg][p] = np.zeros(H)
+                prod_reg[r][p] = np.zeros(H)
             else:
                 # Sinon : prod_reg pour la région et la ressource = facteur de charge de la region * nb[reg][p] * pow
-                prod_reg[reg][p] = np.array(fdc_on[reg]) * nb[reg][p] * pow
-                prod[p] += prod_reg[reg][p] #On ajoute la prod de ce moyen de prodcution dans la prod totale française du moyen de production
+                prod_reg[r][p] = np.array(fdc_on[r]) * nb[r][p] * pow
+                prod[p] += prod_reg[r][p] #On ajoute la prod de ce moyen de prodcution dans la prod totale française du moyen de production
 
 
     # carte alea MEMFDC (lance 1)

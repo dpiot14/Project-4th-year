@@ -74,7 +74,7 @@ class loi_proba:
         # si sens = 1, on veut probabilité proba d'être plus petit
         
         n = len(self.residus)
-        nbr = n*proba
+        nbr = int(n*proba)
         
         if sens == -1:
             return self.residus[1-nbr]
