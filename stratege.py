@@ -131,6 +131,8 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear): #On utilise la s
     surplus = np.zeros(len(prodres))
     # On initialise le manque sur le même nombre d'heure que la production résiduelle
     manque = np.zeros(len(prodres))
+    # On initialise l'état sur la même taille. 0 = pénurie, 100 = flex, 200 = abondance
+    etat_tab = np.zeros(len(prodres))
     #Pour K dans toutes les heures de l'année
     for k in range(H):
         # Production minimale nucléaire 24h = next de pred glissant
@@ -141,17 +143,22 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear): #On utilise la s
         prodres24 = pred_prodres24.__next__()
         #On recharge les lacs
         Lake.recharger(k)
-        if prodres24 + nuke24max < 0:
+        #print(nuke24min,nuke24max)
+        #print(Nuclear.p_min_effective(k),Nuclear.p_max_effective(k))
+        if prodres24 + nuke24min < 0:
             état = "pénurie"
             consigne_SB = cap_sb_pénurie
+            etat_tab[k]=0
 
-        elif prodres24 + nuke24min > 0:
+        elif prodres24 + nuke24max > 0:
             état = "abondance"
             consigne_SB = cap_sb_abondance
+            etat_tab[k]=100
 
         else:
             état = "flexible"
             consigne_SB = cap_sb_milieu + (sb_écart * 0.99)
+            etat_tab[k]=50
 
         sb_écart = consigne_SB - cap_sb_milieu
 
@@ -171,6 +178,7 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear): #On utilise la s
             temp = Nuclear.pilote_prod(k, Nuclear.Pout(k)) 
             prodres_k += temp
             Nuc_tab[k] = temp
+            #print(temp)
             
             if prodres_k > 0:
                 #reliquat on recharge
@@ -201,6 +209,7 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear): #On utilise la s
             # nuke au min
             temp = Nuclear.pilote_prod(k, 0)
             prodres_k += temp
+            #print(temp)
             Nuc_tab[k] = temp
             # gaz à fond
             temp = Gas.recharger(k, Gas.Pin(k))
@@ -286,7 +295,7 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear): #On utilise la s
                manque[k] = -prodres_k
         pass
 
-    return surplus, manque, Phs_tab, Battery_tab, Gas_tab, Lake_tab, Thermal_tab, Nuc_tab
+    return surplus, manque, Phs_tab, Battery_tab, Gas_tab, Lake_tab, Thermal_tab, Nuc_tab, etat_tab
 
 
 def extraire_chroniques(s, p, prodres, S, B, G, L, N):

@@ -326,13 +326,13 @@ Ajouter validation croisée (a voir plus tard, pas priorité)
 Ajouter l'impact des jours précédents (pas priorité non plus)
 '''
 
-def Arimax_predict(data, name_predict, p, q, day_exog=0, int_conf=False, int_conf_1y=False ,error=False,d=0, len_test=0, normalisation=False):    
-    data_copy=data.copy()
-    endog=data_copy[name_predict]
+def Arimax_predict(data, exoge, p, q, day_exog=0, int_conf=False, int_conf_1y=False ,error=False,d=0, len_test=0, normalisation=False):    
+    endog=data.copy()
+    exog=exoge.copy()
     if day_exog==0:
-        exog=data_copy.drop(columns=[name_predict])
+        exog=exoge.copy()
     elif day_exog>0:
-        exog_shift = data_copy.drop(columns=[name_predict]).shift(day_exog)  # On décale les données de day_exog jours
+        exog_shift = exog.shift(day_exog)  # On décale les données de day_exog jours
         # On supprime les premiers jours de données car on NaN dans exog_shift à cause du décalage
         exog=exog_shift.iloc[day_exog:]
         endog=endog.iloc[day_exog:]
@@ -341,9 +341,10 @@ def Arimax_predict(data, name_predict, p, q, day_exog=0, int_conf=False, int_con
         print("Erreur : dans Arimax_predict, la valeur de day_exog est négative, elle doit être positive ou nulle")
     
     if normalisation:
+        if type(exog)==pd.Series:
+            exog = pd.DataFrame(exog)
         scaler = StandardScaler()
         exog = pd.DataFrame(scaler.fit_transform(exog), columns=exog.columns, index=exog.index)
-        print(exog)
     
     if len_test==0:
         # Ajustement du modèle ARIMAX avec les variables exogènes choisies
@@ -369,10 +370,11 @@ def Arimax_predict(data, name_predict, p, q, day_exog=0, int_conf=False, int_con
         predicted_means = predictions.predicted_mean
         predicted_intervals = predictions.conf_int()
         endog=endog_test #Pour la suite
-        print(endog)
         
     else:
         print("Erreur : la taille du jeu de donnée train ne peut pas être négatif")
+        
+    residus = endog.to_numpy() - predicted_means['electricity']
     
     if int_conf:
         # Dates de l'ensemble de test - pour l'axe des x
@@ -437,11 +439,8 @@ def Arimax_predict(data, name_predict, p, q, day_exog=0, int_conf=False, int_con
         print(f"MAE: {mae}")
         print(f"RMSE: {rmse}")
         print(f"R²: {r2}")
-        
-        
     
-    
-    return predicted_means
+    return residus
 
 # A expliquer
 

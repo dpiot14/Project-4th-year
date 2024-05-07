@@ -48,6 +48,7 @@ class loi_proba:
         bin_table[:,0]=bin_table[:,0]/bin_table[:,1]
         #On transforme le nbr de résidus en fréquence
         bin_table[:,1]=bin_table[:,1]/np.sum(len(sorted_residus))
+        bin_table = bin_table[~np.isnan(bin_table).any(axis=1)]
         
         self.residus = sorted_residus
         self.bin_table = bin_table
@@ -91,6 +92,9 @@ class loi_proba:
 
 class renewable_study:
     
+    mean_day_wind=np.ones(24)
+    mean_day_solar=np.ones(24)
+    
     def __init__(self, path_data):
         self.path_data = path_data
         self.data_hour, self.data_day = ut.regroupement_data_all(path_data,annee_debut=[1980,1980,2000],annee_fin=[2023,2023,2023])
@@ -109,8 +113,16 @@ class renewable_study:
         self.arma_residus_solar,self.coeff_arma_solar = meth.Arma_predict(self.data_day['solar_electricity'],p=p,q=q)
         self.arma_proba_distribustion_solar = loi_proba(self.arma_residus_solar, bin_nbr = 50)
         
-    def arimax_analysis(self):
-        pass
+    def arimax_analysis(self, mae_wind = 0.368, mae_temp=0.246, mae_irrad=11):
+        exog_wind = self.data_day['wind_speed'] + np.random.normal(loc=0, scale=mae_wind, size=len(self.data_day['wind_speed']))
+        self.arimax_residus_wind = meth.Arimax_predict(self.data_day['wind_electricity'], exog_wind, p=1, q=1, normalisation=True)
+        self.arimax_proba_distribustion_wind = loi_proba(self.arimax_residus_wind, bin_nbr = 50)
+        
+        exog_1 = self.data_day['irradiance_direct'] + np.random.normal(loc=0, scale=mae_irrad, size=len(self.data_day['irradiance_direct']))
+        exog_2 = self.data_day['temperature'] + np.random.normal(loc=0, scale=mae_temp, size=len(self.data_day['temperature']))
+        exog_solar = pd.concat([exog_1, exog_2], axis=1)
+        self.arimax_residus_solar = meth.Arimax_predict(self.data_day['solar_electricity'], exog_solar, p=1, q=1, normalisation=True)
+        self.arimax_proba_distribustion_solar = loi_proba(self.arimax_residus_solar, bin_nbr = 50)
     
     
     #def arimax_analysis(self, ...): #On effectue l'Arimax, on récupère les résidus, et la loi des résidus (sous forme d'histogramme, + Intervalle de confiance (une série discrétisée avec les valeurs pour IC))
@@ -174,7 +186,7 @@ class renewable_study:
         serie = meth.Ajout_Tendance_Saisonnalite(df_residual, self.tendance_wind, self.saisonnalite_wind, bords_tendance = 'nearest') 
         
         if time_step == 'hour':
-            serie = ut.day_to_hour(serie)
+            serie = ut.day_to_hour(serie, repartition=self.mean_day_wind)
         
         return serie
     
@@ -214,9 +226,18 @@ class renewable_study:
         serie = meth.Ajout_Tendance_Saisonnalite(df_residual, self.tendance_solar, self.saisonnalite_solar, bords_tendance = 'nearest') 
         
         if time_step == 'hour':
-            serie = ut.day_to_hour(serie)
+            serie = ut.day_to_hour(serie, repartition=self.mean_day_solar)
             
         return serie
+    
+    
+    def mean_day(self):
+        self.mean_day_wind = self.data_hour["wind_electricity"].groupby(self.data_hour["wind_electricity"].index.hour).mean()
+        self.mean_day_wind = self.mean_day_wind/np.sum(self.mean_day_wind.values)*24
+        
+        self.mean_day_solar = self.data_hour["solar_electricity"].groupby(self.data_hour["solar_electricity"].index.hour).mean()
+        self.mean_day_solar = self.mean_day_solar/np.sum(self.mean_day_solar.values)*24
+        
     
     
     

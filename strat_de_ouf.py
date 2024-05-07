@@ -119,6 +119,8 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, Conso, fac_IC, H)
     # Création du Prédicteur Glissant pour la production réelle
     pred_prodres24 = strat1.PredicteurGlissant(lambda k: prodres[k])
     
+    pred_conso24 = strat1.PredicteurGlissant(lambda k: Conso[k])
+    
     pred_prodres_IC = {}
 
     # Création des prédicteurs glissant pour les IC
@@ -155,26 +157,35 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, Conso, fac_IC, H)
         
         nuke24max = pred_muke24_max.__next__() # On récupère le rang suivant
         prodres24 = pred_prodres24.__next__()
+        conso24 = pred_conso24.__next__()
         
         sum_prodres_IC_p = pred_prodres_IC['penurie'].__next__()
         sum_prodres_IC_a =  pred_prodres_IC['abondance'].__next__()
         
-        print(nuke24min,nuke24max)
         Lake.recharger(k) # On recherge les lacs
-        if sum_prodres_IC_p + nuke24max - Conso[k]< 0:
+        # print("pénurie:",sum_prodres_IC_p + Nuclear.p_max_effective(k) - Conso[k])
+        # print("abondance:",sum_prodres_IC_a + Nuclear.p_min_effective(k) - Conso[k])
+        # print("sum_prodres_IC_p:",sum_prodres_IC_p)
+        # print("sum_prodres_IC_a:",sum_prodres_IC_a)
+        # print("Nuclear.p_max_effective(k):",nuke24max)
+        # print("pred_nuke24_min",nuke24min)
+        if sum_prodres_IC_p + nuke24max - conso24< 0:
             état = "pénurie"
             consigne_SB = cap_sb_pénurie 
             etat_tab[k]=0
 
-        elif sum_prodres_IC_a + nuke24min - Conso[k] > 0:
+        elif sum_prodres_IC_a + nuke24min - conso24 > 0:
             état = "abondance"
             consigne_SB = cap_sb_abondance
-            etat_tab[k]=200
+            etat_tab[k]=100
 
         else:
             état = "flexible"
             consigne_SB = cap_sb_milieu + (sb_écart * 0.99) # 0.99 pour variations progressives
-            etat_tab[k]=100
+            etat_tab[k]=50
+        
+        # print("etat:",etat_tab[k])
+        # print("--------------------------------")
 
         sb_écart = consigne_SB - cap_sb_milieu # Ecart entre la consigne et la réalisation
 
@@ -194,7 +205,6 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, Conso, fac_IC, H)
         if état == "pénurie":
             # Nuke au max
             temp = Nuclear.pilote_prod(k, Nuclear.Pout(k))
-            print(temp)
             prodres_k += temp
             Nuc_tab[k] = temp
             
@@ -227,7 +237,6 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, Conso, fac_IC, H)
             # nuke au min
             temp = Nuclear.pilote_prod(k, 0)
             prodres_k += temp
-            print(temp)
             Nuc_tab[k] = temp
             # gaz à fond
             temp = Gas.recharger(k, Gas.Pin(k))
@@ -318,6 +327,10 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, Conso, fac_IC, H)
     return surplus, manque, Phs_tab, Battery_tab, Gas_tab, Lake_tab, Thermal_tab, Nuc_tab, etat_tab
 
 
+
+
+
+
 # Utilisé pour calculer la production résiduelle
 
 
@@ -337,7 +350,7 @@ mae_solar = 0.2
 
 #mix à supprimer des paramètres
 
-def calculer_prod_non_pilot(mix, nb, reg, j_asimu=365, IC=[["penurie",0.95,-1],["surplus",0.95,1]]):
+def calculer_prod_non_pilot(mix, nb, reg, j_asimu=365, IC=[["penurie",0.95,-1],["surplus",0.95,1]],method="arma"):
     
     
     # Puissance d'un pion
@@ -360,8 +373,14 @@ def calculer_prod_non_pilot(mix, nb, reg, j_asimu=365, IC=[["penurie",0.95,-1],[
     for r in reg.keys():
         fdc_on[r] = reg[r].generate_load_factor_wind(j_asimu = j_asimu, time_step = 'hour')
         fdc_pv[r] = reg[r].generate_load_factor_solar(j_asimu = j_asimu, time_step = 'hour')
-        fdc_on_approx[r] = fdc_on[r] + add_error(mae_wind, j_asimu*24)
-        fdc_pv_approx[r] = fdc_pv[r] + add_error(mae_solar, j_asimu*24)
+        if method == "arma":
+            fdc_on_approx[r] = fdc_on[r] + reg[r].arma_proba_distribustion_wind.generate()
+            fdc_pv_approx[r] = fdc_pv[r] + reg[r].arma_proba_distribustion_solar.generate()
+        elif method == "arimax":
+            fdc_on_approx[r] = fdc_on[r] + reg[r].arimax_proba_distribustion_wind.generate()
+            fdc_pv_approx[r] = fdc_pv[r] + reg[r].arimax_proba_distribustion_solar.generate()
+        else:
+            pass
         
         
     fdc_on_IC = {}
@@ -373,13 +392,21 @@ def calculer_prod_non_pilot(mix, nb, reg, j_asimu=365, IC=[["penurie",0.95,-1],[
         fdc_pv_IC[i[0]]=0
         fdc_all_IC[i[0]]=0
         for r in reg.keys():
-            fdc_temp = (fdc_on_approx[r] + reg[r].arma_proba_distribustion_wind.IC(proba = i[1], sens = i[2]))*nb[r]["eolienneON"]*powers_renouvables["eolienneON"]
+            if method == "arma":
+                fdc_temp = (fdc_on_approx[r] + reg[r].arma_proba_distribustion_wind.IC(proba = i[1], sens = i[2]))*nb[r]["eolienneON"]*powers_renouvables["eolienneON"]
+                fdc_temp = (fdc_pv_approx[r] + reg[r].arma_proba_distribustion_solar.IC(proba = i[1], sens = i[2]))*nb[r]["panneauPV"]*powers_renouvables["panneauPV"]
+            elif method == "arimax":
+                fdc_temp = (fdc_on_approx[r] + reg[r].arimax_proba_distribustion_wind.IC(proba = i[1], sens = i[2]))*nb[r]["eolienneON"]*powers_renouvables["eolienneON"]
+                fdc_temp = (fdc_pv_approx[r] + reg[r].arimax_proba_distribustion_solar.IC(proba = i[1], sens = i[2]))*nb[r]["panneauPV"]*powers_renouvables["panneauPV"]
+            else:
+                print("Methode inconnue, veuillez utiliser arma ou arimax")
+        
             if fdc_temp < 0 : fdc_temp = 0
             if fdc_temp > 1 : fdc_temp = 1
             fdc_on_IC[i[0]] += fdc_temp
             fdc_all_IC[i[0]] += fdc_on_IC[i[0]]
             
-            fdc_temp = (fdc_pv_approx[r] + reg[r].arma_proba_distribustion_solar.IC(proba = i[1], sens = i[2]))*nb[r]["panneauPV"]*powers_renouvables["panneauPV"]
+            
             if fdc_temp < 0 : fdc_temp = 0
             if fdc_temp > 1 : fdc_temp = 1
             fdc_pv_IC[i[0]] += fdc_temp

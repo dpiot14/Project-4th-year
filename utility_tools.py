@@ -148,7 +148,7 @@ def day_to_hour(serie_d, repartition=None):
         # Si la répartition est spécifiée
         if repartition is not None:
             # Répartir la valeur du jour sur les 24 heures en fonction de la répartition
-            valeurs_heure = valeur_jour * repartition
+            valeurs_heure = valeur_jour * repartition.values
         else:
             # Si aucune répartition n'est spécifiée, répéter la valeur du jour pour les 24 heures
             valeurs_heure = np.full(24, valeur_jour)
