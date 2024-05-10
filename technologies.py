@@ -219,8 +219,8 @@ class TechnoLacs(Techno):
     duree_mois = np.array([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31])*24
     etain = 1
     etaout = 1
-    PoutMax = 10
-    PinMax = 10
+    PoutMax = 18.54
+    PinMax = 18.54
     capacité = TechnoStep.capacité
 
     def __init__(self, nom='Lacs', stock=None,
@@ -365,6 +365,8 @@ class OldTechnoLacs(Techno):
 
 def fc_min_max_nuke(k, Pmax=1):
     """ Renvoie la puissance dispo actuellement pour le nucleaire, par rapport a la puissance max
+
+
 
     Args:
         k (int) : heure courante
