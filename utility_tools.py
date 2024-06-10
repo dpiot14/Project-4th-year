@@ -7,6 +7,7 @@ Created on Sun Mar  3 12:06:45 2024
 
 import pandas as pd
 import random
+import numpy as np
 
 '''
 Fonction pour regrouper les données téléchargées sur plusieurs années consécutive 
@@ -15,7 +16,7 @@ n'y est pas de doublon pour les données
 
     - Pour le vent : data_type = wind
     - Pour les données météo : data_type = weather
-    - Pour le sloaire : data_type = solar
+    - Pour le solaire : data_type = solar
 '''
 
 #A changer  : nom des dossiers (wind/weather/solar)
@@ -91,7 +92,7 @@ def regroupement_data_all(link_data,annee_debut=[1980,1980,2000],annee_fin=[2023
     df_day = df_day.rename(columns={'electricity': 'wind_electricity'})
     df_day = pd.concat([df_day,data_solar_day,data_weather_day],axis=1)
     df_day = df_day.rename(columns={'electricity': 'solar_electricity'})
-    df_day = df_day.drop(['local_time','t2m'],axis=1)
+    df_day = df_day.drop(['t2m'],axis=1)
       
     return df_hour,df_day
 
@@ -126,3 +127,40 @@ def string_to_number_and_string(text):
         nbr = -1
     
     return nbr, rest
+
+
+'''
+Prend en entrée une série journalière, avec en indice une date au format pandas,
+renvoie en sortie une série horaire, avec en indice la date et l'heure au format panda.
+
+Si repartition = None, la valeur du jour dans serie_d est conservée pour les 24 heures
+de la journée correspondante
+Sinon, repartition doit être un vecteur numpy de taille 24, correspondant au coeff qui doit être
+appliqué à chaque heure de la journée
+'''
+
+def day_to_hour(serie_d, repartition=None):
+    # Créer une série horaire vide
+    serie_h = pd.Series()
+    
+    # Parcourir les éléments de la série journalière
+    for date_jour, valeur_jour in serie_d.items():
+        # Si la répartition est spécifiée
+        if repartition is not None:
+            # Répartir la valeur du jour sur les 24 heures en fonction de la répartition
+            valeurs_heure = valeur_jour * repartition.values
+        else:
+            # Si aucune répartition n'est spécifiée, répéter la valeur du jour pour les 24 heures
+            valeurs_heure = np.full(24, valeur_jour)
+        
+        # Créer les index pour chaque heure de la journée
+        index_heures = [date_jour.replace(hour=heure) for heure in range(24)]
+        
+        # Créer une série horaire pour cette journée
+        serie_jour = pd.Series(valeurs_heure, index=index_heures)
+        
+        # Concaténer cette série horaire à la série résultante
+        serie_h = pd.concat([serie_h, serie_jour])
+    
+    return serie_h
+    

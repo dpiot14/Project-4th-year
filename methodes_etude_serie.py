@@ -20,6 +20,7 @@ from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import r2_score
 import statsmodels.api as sm
+from statsmodels.tsa.stattools import acf
 from sklearn.preprocessing import StandardScaler
 import scipy.stats as stats
 from scipy.stats import poisson
@@ -48,16 +49,16 @@ possibilité de remplacer le 1 par une autre valeur pour utiliser la moyenne mob
 
 # Test : ok
 
-def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saison='mobile28_d'):
+def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean', methode_saison='mobile28_d', name='electricity'):
     data_copy=data.copy()
     
     ## -- Calcul de la tendance 
     if methode_tend=='mean':
-        tendance=float(data_copy['electricity'].mean())
+        tendance=float(data_copy.mean())
     elif methode_tend[:6]=='mobile':   # Si on souhaite utiliser une moyenne mobile
         int_mobile,mode_mobile=string_to_number_and_string(methode_tend[6:])
         if mode_mobile=='_d':
-            tendance=data_copy['electricity'].rolling(int_mobile, center=True).mean()
+            tendance=data_copy.rolling(int_mobile, center=True).mean()
         else:
             print("Erreur : mauvais argument pour methode_tend : la méthode mobile ne comprends pas "+mode_mobile+"\nVoir la documentation") 
         
@@ -65,28 +66,27 @@ def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saiso
         print("Erreur : Methode pour la tendance inconnue, essayez avec une autre valeur pour 'methode_tend'")
     
     ## -- Calcul de la saisonnalité
-    data_copy['electricity']=data_copy['electricity']-tendance
+    data_copy=pd.DataFrame(data_copy-tendance)
     data_copy['day']=data_copy.index.day
     data_copy['month']=data_copy.index.month
-    data_year_tendance = data_copy.groupby(['month', 'day']).agg({'electricity': 'mean'})
+    data_year_tendance = data_copy.groupby(['month', 'day']).agg({name : 'mean'})
     
     # Création des index avec jour et mois
     dates = pd.date_range(start='2024-01-01', periods=366)
-    indexes = [f"{date.month}-{date.day}" for date in dates]
-    
-    pd.DataFrame(data_year_tendance, index=indexes, columns=['electricity'])
+    indexes = pd.Index([f"{date.month}-{date.day}" for date in dates])
 
+    data_year_tendance=pd.DataFrame(data_year_tendance).set_index(indexes)
     
     if methode_saison[:6]=='mobile': # Si on souhaite utiliser une moyenne mobile
         int_mobile,mode_mobile=string_to_number_and_string(methode_saison[6:])
         if mode_mobile=='_d':
-            np_saison=pd.concat([data_year_tendance['electricity'][(366-int_mobile):],data_year_tendance['electricity'],data_year_tendance['electricity'][:(int_mobile)]]).rolling(int_mobile, center=True).mean().to_numpy()[(int_mobile):(int_mobile+366)]
-            saison=pd.DataFrame(np_saison, index=indexes, columns=['electricity'])
+            np_saison=pd.concat([data_year_tendance[(366-int_mobile):],data_year_tendance,data_year_tendance[:(int_mobile)]]).rolling(int_mobile, center=True).mean().to_numpy()[(int_mobile):(int_mobile+366)]
+            saison=pd.DataFrame(np_saison, index=indexes)
         else:
             print("Erreur : mauvais argument pour methode_saison : la méthode mobile ne comprends pas "+mode_mobile+"\nVoir la documentation") 
         
     elif methode_saison=='mean':
-        saison=data_year_tendance['electricity']
+        saison=data_year_tendance
         saison.index=[str(saison.index.get_level_values('month')[i])+"-"+str(saison.index.get_level_values('day')[i]) for i in range(366)]
         saison=saison.to_frame()
                 
@@ -99,9 +99,9 @@ def Etude_Tendance_Saisonnalite_annuelle(data, methode_tend='mean',methode_saiso
             
             # Effectuer une transformée de Fourier
             if int_mobile == 1:
-                fft = np.fft.fft(data_year_tendance['electricity'])
+                fft = np.fft.fft(data_year_tendance)
             else:
-                np_saison=pd.concat([data_year_tendance['electricity'][(366-int_mobile):],data_year_tendance['electricity'],data_year_tendance['electricity'][:(int_mobile)]]).rolling(int_mobile, center=True).mean().to_numpy()[(int_mobile):(int_mobile+366)]
+                np_saison=pd.concat([data_year_tendance[(366-int_mobile):],data_year_tendance,data_year_tendance[:(int_mobile)]]).rolling(int_mobile, center=True).mean().to_numpy()[(int_mobile):(int_mobile+366)]
                 fft = np.fft.fft(np_saison)
         
 
@@ -157,7 +157,7 @@ def Retrait_Tendance_Saisonnalite(data, tendance, saisonnalite, bords_tendance =
     
     ## -- Retrait de la tendance
     if type(tendance) == int or type(tendance) == float :
-        data_copy['electricity']-=tendance
+        data_copy-=tendance
     elif type(tendance) == pd.Series :
         if bords_tendance == 'nearest':
             first_valid_index = tendance.first_valid_index()
@@ -165,22 +165,21 @@ def Retrait_Tendance_Saisonnalite(data, tendance, saisonnalite, bords_tendance =
             first_valid_value = tendance[first_valid_index]
             last_valid_value = tendance[last_valid_index]
             tendance = tendance.fillna(method='bfill').fillna(method='ffill')
-            data_copy['electricity'] -= tendance
+            data_copy -= tendance
         elif bords_tendance == 'delete':
             tendance = tendance.dropna()
             data_copy = data_copy[data_copy.index.isin(tendance.index)].copy()
-            data_copy['electricity'] -= tendance.values
+            data_copy -= tendance.values
         else:
             print("Erreur : Paramètre 'bords_tendance' non valide.")
     else:
         
         print("Erreur : le format de la tendance est inconnu : essayer avec une valeur numérique ou un pd.Series")
         
-        
     ## -- Retrait de la saisonnalité
 
     for index in data_copy.index:
-        data_copy.loc[index,'electricity']-=saisonnalite.loc[str(index.month)+"-"+str(index.day),'electricity']
+        data_copy.loc[index]-=saisonnalite.loc[str(index.month)+"-"+str(index.day)].iloc[0]
         
     return data_copy
 
@@ -199,7 +198,7 @@ def Ajout_Tendance_Saisonnalite(data, tendance, saisonnalite, bords_tendance = '
     
     ## -- Ajout de la tendance
     if type(tendance) == int or type(tendance) == float :
-        data_copy['electricity']+=tendance
+        data_copy+=tendance
     elif type(tendance) == pd.Series :
         if bords_tendance == 'nearest':
             first_valid_index = tendance.first_valid_index()
@@ -207,18 +206,18 @@ def Ajout_Tendance_Saisonnalite(data, tendance, saisonnalite, bords_tendance = '
             first_valid_value = tendance[first_valid_index]
             last_valid_value = tendance[last_valid_index]
             tendance = tendance.fillna(method='bfill').fillna(method='ffill')
-            data_copy['electricity'] += tendance
+            data_copy += tendance
         elif bords_tendance == 'delete':
             tendance = tendance.dropna()
             data_copy = data_copy[data_copy.index.isin(tendance.index)].copy()
-            data_copy['electricity'] += tendance.values
+            data_copy += tendance.values
         else:
             print("Erreur : Paramètre 'bords_tendance' non valide.")
         
     ## -- Ajout de la saisonnalité
     
     for index in data.index:
-        data_copy.loc[index,'electricity']+=saisonnalite.loc[str(index.month)+"-"+str(index.day),'electricity']
+        data_copy.loc[index]+=saisonnalite.loc[str(index.month)+"-"+str(index.day)].iloc[0]
         
     return data_copy
 
@@ -238,6 +237,11 @@ Nous n'avons pas besoin de les différencier, d'où le paramètre constant d=0
 
 def Arma_predict(data,p,q,graph_predict=False,graph_predict_last_year=False,graph_autocorrelation=False,error=False,d=0):
     arma = ARIMA(data, order=(p,d,q)).fit() # Par défaut, d=0 pour un processus ARMA
+    
+    acf_values = acf(data)
+# serie_ doit être de type serie
+
+    
     pred = arma.predict()
     
     if graph_predict:
@@ -250,10 +254,11 @@ def Arma_predict(data,p,q,graph_predict=False,graph_predict_last_year=False,grap
         plt.legend()
         plt.show()
         
+    # Sélection des 365 derniers jours pour chaque série
+    serie_derniere_annee = data[-365:]
+    pred_derniere_annee = pred[-365:]   
+    
     if graph_predict_last_year:
-        # Sélection des 365 derniers jours pour chaque série
-        serie_derniere_annee = data[-365:]
-        pred_derniere_annee = pred[-365:]
 
         # Création du graphique
         plt.figure(figsize=(12,6))
@@ -275,7 +280,8 @@ def Arma_predict(data,p,q,graph_predict=False,graph_predict_last_year=False,grap
     
     if graph_autocorrelation:
         plot_pacf(data)
-        plot_acf(data)
+        b = plot_acf(data)
+        print(b)
         plt.show()
         
     if error:
@@ -295,8 +301,10 @@ def Arma_predict(data,p,q,graph_predict=False,graph_predict_last_year=False,grap
         print(f"MAE: {mae}")
         print(f"RMSE: {rmse}")
         print(f"R²: {r2}")
+        
+    residus = data - pred
     
-    return pred
+    return [residus,acf_values[1]]
 
 '''
 Fonction pour réaliser l'étude arimax d'une série temporelle data
@@ -318,13 +326,13 @@ Ajouter validation croisée (a voir plus tard, pas priorité)
 Ajouter l'impact des jours précédents (pas priorité non plus)
 '''
 
-def Arimax_predict(data, name_predict, p, q, day_exog=0, int_conf=False, int_conf_1y=False ,error=False,d=0, len_test=0, normalisation=False):    
-    data_copy=data.copy()
-    endog=data_copy[name_predict]
+def Arimax_predict(data, exoge, p, q, day_exog=0, int_conf=False, int_conf_1y=False ,error=False,d=0, len_test=0, normalisation=False):    
+    endog=data.copy()
+    exog=exoge.copy()
     if day_exog==0:
-        exog=data_copy.drop(columns=[name_predict])
+        exog=exoge.copy()
     elif day_exog>0:
-        exog_shift = data_copy.drop(columns=[name_predict]).shift(day_exog)  # On décale les données de day_exog jours
+        exog_shift = exog.shift(day_exog)  # On décale les données de day_exog jours
         # On supprime les premiers jours de données car on NaN dans exog_shift à cause du décalage
         exog=exog_shift.iloc[day_exog:]
         endog=endog.iloc[day_exog:]
@@ -333,9 +341,10 @@ def Arimax_predict(data, name_predict, p, q, day_exog=0, int_conf=False, int_con
         print("Erreur : dans Arimax_predict, la valeur de day_exog est négative, elle doit être positive ou nulle")
     
     if normalisation:
+        if type(exog)==pd.Series:
+            exog = pd.DataFrame(exog)
         scaler = StandardScaler()
         exog = pd.DataFrame(scaler.fit_transform(exog), columns=exog.columns, index=exog.index)
-        print(exog)
     
     if len_test==0:
         # Ajustement du modèle ARIMAX avec les variables exogènes choisies
@@ -361,10 +370,11 @@ def Arimax_predict(data, name_predict, p, q, day_exog=0, int_conf=False, int_con
         predicted_means = predictions.predicted_mean
         predicted_intervals = predictions.conf_int()
         endog=endog_test #Pour la suite
-        print(endog)
         
     else:
         print("Erreur : la taille du jeu de donnée train ne peut pas être négatif")
+        
+    residus = endog.to_numpy() - predicted_means['electricity']
     
     if int_conf:
         # Dates de l'ensemble de test - pour l'axe des x
@@ -430,8 +440,7 @@ def Arimax_predict(data, name_predict, p, q, day_exog=0, int_conf=False, int_con
         print(f"RMSE: {rmse}")
         print(f"R²: {r2}")
     
-    
-    return predicted_means
+    return residus
 
 # A expliquer
 

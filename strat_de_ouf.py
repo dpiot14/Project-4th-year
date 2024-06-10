@@ -72,19 +72,37 @@ class PredicteurRenouvelable():
 
 # Pour recharger astocker GW à l'heure k dans les technologies présentes dans liste
 # On commence par recharger dans la première tech de la liste, puis la 2eme, ...
-def recharge_plusieur_techs(k, liste, astocker):
+def recharge_plusieur_techs(k, liste, astocker, return_dico=False, liste_dico=[]):
     astocker_init = astocker
-    for tec in liste:
-        astocker -= tec.recharger(k=k, astocker=astocker)
-    return astocker_init - astocker
+    dico = {}
+    astocker_temp = astocker
+    if liste_dico == []:
+        liste_dico = liste
+    for i in range(len(liste)):
+        astocker -= liste[i].recharger(k=k, astocker=astocker)
+        dico[liste_dico[i]] = astocker_temp-astocker
+        astocker_temp = astocker
+    if return_dico:
+        return astocker_init - astocker, dico
+    else:
+        return astocker_init - astocker
 
 
 # idem decharge_plusieur_techs mais en faisant l'inverse
-def decharge_plusieur_techs(k, liste, aproduire):
+def decharge_plusieur_techs(k, liste, aproduire, return_dico=False, liste_dico=[]):
     aproduire_init = aproduire
-    for tec in liste:
-        aproduire -= tec.décharger(k=k, aproduire=aproduire)
-    return aproduire_init - aproduire
+    dico = {}
+    aproduire_temp = aproduire
+    if liste_dico == []:
+        liste_dico = liste
+    for i in range(len(liste)):
+        aproduire -= liste[i].décharger(k=k, aproduire=aproduire)
+        dico[liste_dico[i]]= aproduire_temp-aproduire
+        aproduire_temp= aproduire
+    if return_dico:
+        return aproduire_init - aproduire, dico
+    else:
+        return aproduire_init - aproduire
 
 
 def add_error(mae, size):
@@ -118,6 +136,8 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, Conso, fac_IC, H)
     pred_muke24_max = strat1.PredicteurGlissant(Nuclear.p_max_effective)
     # Création du Prédicteur Glissant pour la production réelle
     pred_prodres24 = strat1.PredicteurGlissant(lambda k: prodres[k])
+    
+    pred_conso24 = strat1.PredicteurGlissant(lambda k: Conso[k])
     
     pred_prodres_IC = {}
 
@@ -155,26 +175,35 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, Conso, fac_IC, H)
         
         nuke24max = pred_muke24_max.__next__() # On récupère le rang suivant
         prodres24 = pred_prodres24.__next__()
+        conso24 = pred_conso24.__next__()
         
         sum_prodres_IC_p = pred_prodres_IC['penurie'].__next__()
         sum_prodres_IC_a =  pred_prodres_IC['abondance'].__next__()
         
-        print(nuke24min,nuke24max)
         Lake.recharger(k) # On recherge les lacs
-        if sum_prodres_IC_p + nuke24max - Conso[k]< 0:
+        # print("pénurie:",sum_prodres_IC_p + Nuclear.p_max_effective(k) - Conso[k])
+        # print("abondance:",sum_prodres_IC_a + Nuclear.p_min_effective(k) - Conso[k])
+        # print("sum_prodres_IC_p:",sum_prodres_IC_p)
+        # print("sum_prodres_IC_a:",sum_prodres_IC_a)
+        # print("Nuclear.p_max_effective(k):",nuke24max)
+        # print("pred_nuke24_min",nuke24min)
+        if sum_prodres_IC_p + nuke24max - conso24< 0:
             état = "pénurie"
             consigne_SB = cap_sb_pénurie 
             etat_tab[k]=0
 
-        elif sum_prodres_IC_a + nuke24min - Conso[k] > 0:
+        elif sum_prodres_IC_a + nuke24min - conso24 > 0:
             état = "abondance"
             consigne_SB = cap_sb_abondance
-            etat_tab[k]=200
+            etat_tab[k]=100
 
         else:
             état = "flexible"
             consigne_SB = cap_sb_milieu + (sb_écart * 0.99) # 0.99 pour variations progressives
-            etat_tab[k]=100
+            etat_tab[k]=50
+        
+        # print("etat:",etat_tab[k])
+        # print("--------------------------------")
 
         sb_écart = consigne_SB - cap_sb_milieu # Ecart entre la consigne et la réalisation
 
@@ -193,129 +222,162 @@ def strat_stockage(prodres, Step, Battery, Gas, Lake, Nuclear, Conso, fac_IC, H)
 
         if état == "pénurie":
             # Nuke au max
-            temp = Nuclear.pilote_prod(k, Nuclear.Pout(k))
-            print(temp)
+            temp=Nuclear.pilote_prod(k, Nuclear.Pout(k))
             prodres_k += temp
-            Nuc_tab[k] = temp
-            
+            Nuc_tab[k]=temp
+            # print(temp)
+
             if prodres_k > 0:
-                #reliquat on recharge
-                temp = recharge_plusieur_techs(k, liste=[Battery, Step, Gas], astocker=prodres_k)
-                Phs_tab[k] = -temp
+                # reliquat on recharge
+                temp, dico=recharge_plusieur_techs(
+                    k, liste=[Battery, Step, Gas], astocker=prodres_k, return_dico=True, liste_dico=["Battery", "Step", "Gas"])
+                Phs_tab[k] -= dico['Step']
+                Battery_tab[k] -= dico['Battery']
+                Gas_tab[k] -= dico['Gas']
                 prodres_k -= temp
-                #reliquat on risque d'écrêter : on annule le trop
+                # reliquat on risque d'écrêter : on annule le trop
                 if prodres_k > 0:
-                    temp = Nuclear.pilot_annule_prod(k, prodres_k)
+                    temp=Nuclear.pilot_annule_prod(k, prodres_k)
                     prodres_k -= temp
                     Nuc_tab[k] -= temp
-                    
-                surplus[k] = prodres_k
+
+                surplus[k]=prodres_k
 
             else:
-                aproduire_k = -prodres_k
+                aproduire_k=-prodres_k
                 if stock_SB > 0.3 * cap_sb_max:
-                    temp = decharge_plusieur_techs(k, liste=[Step, Battery, Lake, Gas], aproduire = aproduire_k)
+                    temp, dico=decharge_plusieur_techs(
+                        k, liste=[Step, Battery, Lake, Gas], aproduire=aproduire_k, return_dico=True, liste_dico=["Step", "Battery", "Lake", "Gas"])
                     aproduire_k -= temp
-                    Phs_tab[k] = temp
+                    Phs_tab[k] += dico['Step']
+                    Battery_tab[k] += dico['Battery']
+                    Lake_tab[k] += dico['Lake']
+                    Gas_tab[k] += dico['Gas']
                 else:
-                    temp = decharge_plusieur_techs(k, liste=[Lake, Step, Battery, Gas], aproduire=aproduire_k)
+                    temp, dico=decharge_plusieur_techs(
+                        k, liste=[Lake, Step, Battery, Gas], aproduire=aproduire_k, return_dico=True, liste_dico=["Lake", "Step", "Battery", "Gas"])
                     aproduire_k -= temp
-                    Phs_tab[k] = temp
-                manque[k] = aproduire_k
+                    Phs_tab[k] += dico['Step']
+                    Battery_tab[k] += dico['Battery']
+                    Lake_tab[k] += dico['Lake']
+                    Gas_tab[k] += dico['Gas']
+                manque[k]=aproduire_k
 
         elif état == "abondance":
             # nuke au min
-            temp = Nuclear.pilote_prod(k, 0)
+            temp=Nuclear.pilote_prod(k, 0)
             prodres_k += temp
-            print(temp)
-            Nuc_tab[k] = temp
+            # print(temp)
+            Nuc_tab[k]=temp
             # gaz à fond
-            temp = Gas.recharger(k, Gas.Pin(k))
+            temp=Gas.recharger(k, Gas.Pin(k))
             prodres_k -= temp
             Gas_tab[k] -= temp
 
             if a_decharger_SB < 0:
                 # les batteries veulent remonter à 30% tant mieux !
-                temp = recharge_plusieur_techs(k, liste=[Step, Battery], astocker= -a_decharger_SB)
+                temp, dico=recharge_plusieur_techs(
+                    k, liste=[Step, Battery], astocker=-a_decharger_SB, return_dico=True, liste_dico=['Step', 'Battery'])
                 prodres_k -= temp
-                Phs_tab[k] -= temp
+                #print(dico)
+                Phs_tab[k] -= dico['Step']
+                Battery_tab[k] -= dico['Battery']
             else:
                 # on prend le risque d'écrêter
-                temp = decharge_plusieur_techs(k, liste=[Battery, Step], aproduire=a_decharger_SB)
+                temp, dico=decharge_plusieur_techs(
+                    k, liste=[Battery, Step], aproduire=a_decharger_SB, return_dico=True, liste_dico=['Battery', 'Step'])
                 prodres_k += temp
-                Phs_tab[k] += temp
-                
+                #print(dico)
+                Phs_tab[k] += dico['Step']
+                Battery_tab[k] += dico['Battery']
 
             if prodres_k > 0:
-                #on écrêterait
-                temp = recharge_plusieur_techs(k, liste=[Step, Battery], astocker=prodres_k)
+                # on écrêtarait
+                temp, dico=recharge_plusieur_techs(
+                    k, liste=[Step, Battery], astocker=prodres_k, return_dico=True, liste_dico=['Step', 'Battery'])
                 prodres_k -= temp
-                Phs_tab[k] -= temp
-                surplus[k] = prodres_k
+                #print(dico)
+                Phs_tab[k] -= dico['Step']
+                Battery_tab[k] -= dico['Battery']
+                surplus[k]=prodres_k
             else:
-                aproduire = -prodres_k
+                aproduire=-prodres_k
                 # un peu de nuke pour recharger le gas et batt
-                temp = Nuclear.pilote_prod(k, aproduire)
+                temp=Nuclear.pilote_prod(k, aproduire)
                 aproduire -= temp
                 Nuc_tab[k] += temp
                 # on risque la pénurie finalement : on annule la production de H2
-                temp = Gas.annuler_recharger(k, aanuler= aproduire)
+                temp=Gas.annuler_recharger(k, aanuler=aproduire)
                 aproduire -= temp
                 Gas_tab[k] += temp
                 # on vide les batterie sous 30% puis lac puis Gas fossile
-                temp = decharge_plusieur_techs(k, liste=[Battery, Step, Lake, Gas], aproduire=aproduire)
+                temp, dico=decharge_plusieur_techs(
+                    k, liste=[Battery, Step, Lake, Gas], aproduire=aproduire, return_dico=True, liste_dico=["Battery", "Step", "Lake", "Gas"])
                 aproduire -= temp
-                Phs_tab[k] += temp
-                
-                manque[k] = aproduire
+                Phs_tab[k] += dico['Step']
+                Battery_tab[k] += dico['Battery']
+                Lake_tab[k] += dico['Lake']
+                Gas_tab[k] += dico['Gas']
+
+                manque[k]=aproduire
 
         else:
-            # Flexible
+            # Normal
 
 
-            #regul batteries
+            # regul batteries
             if a_decharger_SB < 0:
                 # les batteries veulent remonter à 50%
-                temp = recharge_plusieur_techs(k, liste=[Step, Battery],
-                                                     astocker=-a_decharger_SB)
+                temp, dico=recharge_plusieur_techs(k, liste=[Step, Battery],
+                                                     astocker=-a_decharger_SB, return_dico=True, liste_dico=["Step", "Battery"])
                 prodres_k -= temp
-                Phs_tab[k] -= temp
+                Phs_tab[k] -= dico['Step']
+                Battery_tab[k] -= dico['Battery']
 
             else:
                 # on prend le risque d'écrêter
-                temp = decharge_plusieur_techs(k, liste=[Battery, Step],
-                                                     aproduire=a_decharger_SB)
+                temp, dico=decharge_plusieur_techs(k, liste=[Battery, Step],
+                                                     aproduire=a_decharger_SB, return_dico=True, liste_dico=["Battery", "Step"])
                 prodres_k += temp
-                Phs_tab[k] += temp
-                
+                Phs_tab[k] -= dico['Step']
+                Battery_tab[k] -= dico['Battery']
+
             # gaz à fond
-            temp = Gas.recharger(k, Nuclear.Pout(k) + prodres_k) 
+            temp=Gas.recharger(k, Nuclear.Pout(k) + prodres_k)
             prodres_k -= temp
             Gas_tab[k] -= temp
             # max de Gaz que nucléaire + renouvelable permet
 
-            temp = Nuclear.pilote_prod(k, -prodres_k) # Ajout du nucléaire nécessaire
+            # Ajout du nucléaire nécessaire
+            temp=Nuclear.pilote_prod(k, -prodres_k)
             prodres_k += temp
-            Nuc_tab[k]+= temp
-            
+            Nuc_tab[k] += temp
 
             if prodres_k > 0:
-                # on écrêterait
-                temp = recharge_plusieur_techs(k, liste=[Step, Battery],
-                                                      astocker=prodres_k)
-                prodres_k -= temp
-                Phs_tab[k] -= temp
-                surplus[k] = prodres_k
+               # on écrêterait
+               temp, dico=recharge_plusieur_techs(k, liste=[Step, Battery],
+                                                     astocker=prodres_k, return_dico=True, liste_dico=["Step", "Battery"])
+               prodres_k -= temp
+               Phs_tab[k] -= dico['Step']
+               Battery_tab[k] -= dico['Battery']
+               surplus[k]=prodres_k
             else:
-                # risque de pénurie
-                temp = decharge_plusieur_techs(k, liste=[Lake, Step, Battery, Gas],
-                                                     aproduire=-prodres_k)
-                prodres_k += temp
-                Phs_tab[k] += temp
-                manque[k] = -prodres_k
+               # risque de pénurie
+               temp, dico=decharge_plusieur_techs(k, liste=[Lake, Step, Battery, Gas],
+                                                    aproduire=-prodres_k, return_dico=True, liste_dico=["Lake", "Step", "Battery", "Gas"])
+               prodres_k += temp
+               Phs_tab[k] += dico['Step']
+               Battery_tab[k] += dico['Battery']
+               Lake_tab[k] += dico['Lake']
+               Gas_tab[k] += dico['Gas']
+               manque[k]=-prodres_k
         pass
 
     return surplus, manque, Phs_tab, Battery_tab, Gas_tab, Lake_tab, Thermal_tab, Nuc_tab, etat_tab
+
+
+
+
 
 
 # Utilisé pour calculer la production résiduelle
@@ -337,7 +399,7 @@ mae_solar = 0.2
 
 #mix à supprimer des paramètres
 
-def calculer_prod_non_pilot(mix, nb, reg, j_asimu=365, IC=[["penurie",0.95,-1],["surplus",0.95,1]]):
+def calculer_prod_non_pilot(mix, nb, reg, j_asimu=365, IC=[["penurie",0.95,-1],["surplus",0.95,1]],method="arma"):
     
     
     # Puissance d'un pion
@@ -360,8 +422,14 @@ def calculer_prod_non_pilot(mix, nb, reg, j_asimu=365, IC=[["penurie",0.95,-1],[
     for r in reg.keys():
         fdc_on[r] = reg[r].generate_load_factor_wind(j_asimu = j_asimu, time_step = 'hour')
         fdc_pv[r] = reg[r].generate_load_factor_solar(j_asimu = j_asimu, time_step = 'hour')
-        fdc_on_approx[r] = fdc_on[r] + add_error(mae_wind, j_asimu*24)
-        fdc_pv_approx[r] = fdc_pv[r] + add_error(mae_solar, j_asimu*24)
+        if method == "arma":
+            fdc_on_approx[r] = fdc_on[r] + reg[r].arma_proba_distribustion_wind.generate()
+            fdc_pv_approx[r] = fdc_pv[r] + reg[r].arma_proba_distribustion_solar.generate()
+        elif method == "arimax":
+            fdc_on_approx[r] = fdc_on[r] + reg[r].arimax_proba_distribustion_wind.generate()
+            fdc_pv_approx[r] = fdc_pv[r] + reg[r].arimax_proba_distribustion_solar.generate()
+        else:
+            pass
         
         
     fdc_on_IC = {}
@@ -373,13 +441,21 @@ def calculer_prod_non_pilot(mix, nb, reg, j_asimu=365, IC=[["penurie",0.95,-1],[
         fdc_pv_IC[i[0]]=0
         fdc_all_IC[i[0]]=0
         for r in reg.keys():
-            fdc_temp = (fdc_on_approx[r] + reg[r].arma_proba_distribustion_wind.IC(proba = i[1], sens = i[2]))*nb[r]["eolienneON"]*powers_renouvables["eolienneON"]
+            if method == "arma":
+                fdc_temp = (fdc_on_approx[r] + reg[r].arma_proba_distribustion_wind.IC(proba = i[1], sens = i[2]))*nb[r]["eolienneON"]*powers_renouvables["eolienneON"]
+                fdc_temp = (fdc_pv_approx[r] + reg[r].arma_proba_distribustion_solar.IC(proba = i[1], sens = i[2]))*nb[r]["panneauPV"]*powers_renouvables["panneauPV"]
+            elif method == "arimax":
+                fdc_temp = (fdc_on_approx[r] + reg[r].arimax_proba_distribustion_wind.IC(proba = i[1], sens = i[2]))*nb[r]["eolienneON"]*powers_renouvables["eolienneON"]
+                fdc_temp = (fdc_pv_approx[r] + reg[r].arimax_proba_distribustion_solar.IC(proba = i[1], sens = i[2]))*nb[r]["panneauPV"]*powers_renouvables["panneauPV"]
+            else:
+                print("Methode inconnue, veuillez utiliser arma ou arimax")
+        
             if fdc_temp < 0 : fdc_temp = 0
             if fdc_temp > 1 : fdc_temp = 1
             fdc_on_IC[i[0]] += fdc_temp
             fdc_all_IC[i[0]] += fdc_on_IC[i[0]]
             
-            fdc_temp = (fdc_pv_approx[r] + reg[r].arma_proba_distribustion_solar.IC(proba = i[1], sens = i[2]))*nb[r]["panneauPV"]*powers_renouvables["panneauPV"]
+            
             if fdc_temp < 0 : fdc_temp = 0
             if fdc_temp > 1 : fdc_temp = 1
             fdc_pv_IC[i[0]] += fdc_temp
